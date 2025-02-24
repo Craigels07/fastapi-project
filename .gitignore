@@ -1,22 +1,21 @@
+# Virtual environment (for venv users)
 venv/
-bin/
-include/
-lib/
-share/
-pyvenv.cfg
+
+# Compiled Python files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
 
 # Environment variables
 .env
 *.env
-.env.local
-.env.*.local
 
-# Alembic migrations cache
+# Alembic migrations cache (keep the `migrations/` folder, but ignore compiled files)
 migrations/versions/*.pyc
 migrations/env.pyc
-migrations/alembic.ini
 
-# Editor / OS files
+# Editor / OS-specific files
 .vscode/
 .idea/
 *.swp
@@ -25,23 +24,14 @@ migrations/alembic.ini
 
 # Docker / Containers
 *.dockerignore
-*.pid
-*.sock
 
 # Python dependencies
 *.egg-info/
 pip-log.txt
 pip-delete-this-directory.txt
-poetry.lock
-Pipfile
-Pipfile.lock
 
 # Build and distribution
 build/
 dist/
 *.egg
 MANIFEST
-
-# Database files
-instance/
-db.sqlite3
