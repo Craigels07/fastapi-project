@@ -1,4 +1,47 @@
-
 venv/
-__pycache__/
+bin/
+include/
+lib/
+share/
+pyvenv.cfg
+
+# Environment variables
 .env
+*.env
+.env.local
+.env.*.local
+
+# Alembic migrations cache
+migrations/versions/*.pyc
+migrations/env.pyc
+migrations/alembic.ini
+
+# Editor / OS files
+.vscode/
+.idea/
+*.swp
+.DS_Store
+*.log
+
+# Docker / Containers
+*.dockerignore
+*.pid
+*.sock
+
+# Python dependencies
+*.egg-info/
+pip-log.txt
+pip-delete-this-directory.txt
+poetry.lock
+Pipfile
+Pipfile.lock
+
+# Build and distribution
+build/
+dist/
+*.egg
+MANIFEST
+
+# Database files
+instance/
+db.sqlite3
