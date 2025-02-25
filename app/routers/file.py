@@ -15,7 +15,7 @@ router = APIRouter(prefix="/files", tags=["files"])
 
 
 @router.post("/", response_model=FileResponse)
-async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def upload_file(file: UploadFile = File(), db: Session = Depends(get_db)):
     file_path = Path(UPLOAD_DIR) / file.filename
     with file_path.open("wb") as buffer:
         buffer.write(await file.read())

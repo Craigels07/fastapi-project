@@ -6,6 +6,8 @@ from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 from dotenv import load_dotenv
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from app.models.file import File
+from app.models.user import User
 from app.database import Base
 from alembic import context
 
