@@ -4,10 +4,18 @@
 This is a FastAPI-based project designed to handle file uploads and user management. It utilizes PostgreSQL as the database, SQLAlchemy for ORM, and Alembic for database migrations.
 
 ## Features
-- User registration
+- User Registration
 - File uploads and management
 - Database-backed storage with PostgreSQL
 - Automatic schema migrations with Alembic
+
+## Next Steps
+- Integrate LlamaIndex for indexing & retrieval
+- Connect LangChain for query processing
+- Integrate LLM (OpenAI API)
+- Enable streaming responses for better UX
+- Build a simple frontend (React, Next.js)
+- Optimize performance & deploy (Docker)
 
 ## Installation
 ### Prerequisites
@@ -46,31 +54,3 @@ To start the FastAPI server, use:
 uvicorn app.main:app --reload
 ```
 
-## API Endpoints
-### User Routes
-- `POST /users/` - Create a new user
-- `GET /users/{id}` - Get user by ID
-
-### File Routes
-- `POST /files/upload` - Upload a file
-- `GET /files/{id}` - Retrieve file information
-
-## Testing
-To run tests:
-```sh
-pytest
-```
-
-## License
-This project is licensed under the MIT License.
-
-## Contributing
-Feel free to open issues or submit pull requests to improve the project.
-
-## Next Steps
-- Integrate LlamaIndex for indexing & retrieval
-- Connect LangChain for query processing
-- Integrate LLM (OpenAI API)
-- Enable streaming responses for better UX
-- Build a simple frontend (React, Next.js)
-- Optimize performance & deploy (Docker)
