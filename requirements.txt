@@ -3,3 +3,6 @@ psycopg2-binary
 sqlalchemy
 alembic
 python-dotenv
+python-multipart
+llama-index
+pypdf
