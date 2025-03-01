@@ -1,5 +1,6 @@
 fastapi[all]
 psycopg2-binary
+pgvector
 sqlalchemy
 alembic
 python-dotenv

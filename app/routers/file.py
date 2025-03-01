@@ -21,7 +21,14 @@ async def upload_file(file: UploadFile = File(), db: Session = Depends(get_db)):
         buffer.write(await file.read())
 
     file_data = FileCreate(filename=file.filename, filetype=file.content_type, filepath=str(file_path))
-    return create_file(db, file_data)
+    saved_file = create_file(db, file_data)
+
+    if file.content_type.startswith("text"):
+        with open(file_path, "r") as f:
+            content = f.read()
+            store_document(db, content, file.id)
+
+    return saved_file
 
 @router.get("/", response_model=FileResponse)
 async def get_file(file_id: int, db: Session = Depends(get_db)):
