@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.routers import file, user
+from app.routers import documents, file, user
 
 
 app = FastAPI()
@@ -10,3 +10,4 @@ def read_root():
 
 app.include_router(user.router)
 app.include_router(file.router)
+app.include_router(documents.router)

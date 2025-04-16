@@ -1,8 +1,8 @@
-"""Initial migration with PGVector
+"""recreate_documents_table
 
-Revision ID: 3b64ec1a7af7
+Revision ID: 04f69a030848
 Revises: 
-Create Date: 2025-02-26 15:14:53.084953
+Create Date: 2025-04-16 12:04:26.750770
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '3b64ec1a7af7'
+revision: str = '04f69a030848'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

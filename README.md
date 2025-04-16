@@ -51,6 +51,14 @@ Ensure you have the following installed:
 ## Running the Application
 To start the FastAPI server, use:
 ```sh
-uvicorn app.main:app --reload
+uvicorn main:app --reload
 ```
 
+## Database Migrations
+To apply database migrations:
+```sh
+python -m alembic revision --autogenerate -m "update document model"
+alembic revision --autogenerate -m "create_documents_table"
+python -m alembic upgrade head
+alembic upgrade head
+```

@@ -5,5 +5,31 @@ sqlalchemy
 alembic
 python-dotenv
 python-multipart
+
+# RAG
 llama-index
+
+# LangChain:
+langgraph
+langgraph-sdk
+langgraph-checkpoint-sqlite
+langchain
+langchain-community
+langchain-core
+langchain-openai
+langgraph-cli
+langsmith
+
+tavily-python
+wikipedia
+
+notebook
+
 pypdf
+docx2txt
+unstructured
+pillow
+python-pptx
+openpyxl
+pandas
+
