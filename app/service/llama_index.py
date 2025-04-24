@@ -1,8 +1,9 @@
 import os
+from langchain_openai import ChatOpenAI
 from openai import OpenAI
 from dotenv import load_dotenv
-from llama_index.node_parser import SimpleNodeParser
-from llama_index.text_splitter import TokenTextSplitter
+from langchain_openai import OpenAIEmbeddings
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 load_dotenv()
 
@@ -17,18 +18,28 @@ class LlamaIndexService:
         Creates an OpenAI client object with the OPENAI_API_KEY environment variable.
         """
         self.model = "text-embedding-ada-002"
-        self.text_splitter = TokenTextSplitter(chunk_size=512, chunk_overlap=20)
-        self.node_parser = SimpleNodeParser(text_splitter=self.text_splitter)
+        self.embeddings = OpenAIEmbeddings(model="text-embedding-ada-002")
+        self.llm = ChatOpenAI(model="gpt-4o", temperature=0)
+        self.text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000,
+            chunk_overlap=200,
+            length_function=len,
+            separators=["\n\n", "\n", " ", ""]
+        )
 
         self.client = OpenAI(api_key=OPENAI_API_KEY)
 
     def get_embedding(self, text: str) -> list:
-        response = self.client.embeddings.create(
-            model=self.model,
-            input=text
-        )
-        return response.data[0].embedding
+        """Get embeddings using LangChain"""
+        return self.embeddings.embed_query(text)
 
     def chunk_text(self, text: str) -> list[str]:
         """Split text into chunks"""
         return self.text_splitter.split_text(text)
+    
+    def ask_question(self, question: str, docs: list[str]) -> str:
+        """Answer questions using retrieved documents"""
+        context = "\n\n".join(docs)
+        prompt = f"Based on the following context, answer this question: {question}\n\nContext: {context}"
+        response = self.llm.predict(prompt)
+        return response

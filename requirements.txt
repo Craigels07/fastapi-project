@@ -1,9 +1,15 @@
 fastapi[all]
-psycopg2-binary
+
+psycopg
+psycopg-pool
 pgvector
+psycopg[binary]
+
 sqlalchemy
 alembic
+
 python-dotenv
+
 python-multipart
 
 # RAG
@@ -11,8 +17,11 @@ llama-index
 
 # LangChain:
 langgraph
+langchain_openai
+langchain_core
 langgraph-sdk
 langgraph-checkpoint-sqlite
+langgraph-checkpoint-postgres
 langchain
 langchain-community
 langchain-core

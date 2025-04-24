@@ -72,15 +72,15 @@ def search_documents(db: Session, query: str, limit: int = 5) -> List[SearchResp
     
     sql = text("""
         SELECT d.id, d.doc_metadata->>'filename' as filename, d.content, 
-               1 - (d.embedding <-> :embedding::vector) as similarity
+               1 - (d.embedding <=> :embedding) as similarity
         FROM documents d
-        ORDER BY d.embedding <-> :embedding::vector
+        ORDER BY d.embedding <=> :embedding
         LIMIT :limit
     """)
     
     results = db.execute(
         sql, 
-        {"embedding": str(list(query_embedding)), "limit": limit}
+        {"embedding": query_embedding, "limit": limit}
     ).fetchall()
 
     return [
