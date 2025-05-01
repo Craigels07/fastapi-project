@@ -12,8 +12,8 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 import os
-from typing import List, Optional
-from app.schemas.document import DocumentCreate, DocumentResponse, SearchResponse
+from typing import List
+from app.schemas.document import SearchResponse
 
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -27,7 +27,7 @@ async def process_and_store_document(db, file, file_path):
     documents = loader.load()
     text_content = "\n\n".join(doc.page_content for doc in documents)
 
-    collection = get_or_create_collection(db, "UDM")
+    collection = get_or_create_collection(db, "craig_test")
 
     # Chunking
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
@@ -85,7 +85,7 @@ def search_documents(db: Session, query: str, limit: int = 5) -> List[SearchResp
 
     responses = []
 
-    collection = get_or_create_collection(db, "UDM")
+    collection = get_or_create_collection(db, "craig_test")
 
     embeddings = OpenAIEmbeddings(api_key=OPENAI_API_KEY, model="text-embedding-3-small")
 
