@@ -28,6 +28,7 @@ langchain-core
 langchain-openai
 langgraph-cli
 langsmith
+langchain-postgres
 
 tavily-python
 wikipedia
@@ -41,4 +42,4 @@ pillow
 python-pptx
 openpyxl
 pandas
-
+pdfminer.six

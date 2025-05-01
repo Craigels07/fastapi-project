@@ -1,30 +1,27 @@
 from pydantic import BaseModel
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 class DocumentBase(BaseModel):
-    content: str
     content_type: str
     filepath: str
-    filename: str
-    doc_metadata: Dict[str, Any] | None = None
+    preview: Optional[str] = None
+    doc_metadata: Optional[Dict[str, Any]] = None
+    collection_id: int
 
 class DocumentCreate(DocumentBase):
     pass
 
 class DocumentResponse(BaseModel):
     id: int
-    content: str
-    content_type: str
-    filepath: str
-    doc_metadata: Dict[str, Any]
-
+    collection_id: int
     class Config:
         from_attributes = True
 
 class SearchResponse(BaseModel):
     id: int
-    filename: str
-    content: str
+    collection_id: Optional[int] = None
+    filename: Optional[str] = None
+    preview: Optional[str] = None
     similarity: float
 
     class Config:

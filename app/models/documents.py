@@ -17,6 +17,7 @@ class Document(Base):
     doc_metadata = Column(JSON, nullable=True)
     collection_id = Column(Integer, ForeignKey("collections.id"), nullable=False)
     collection = relationship("Collection", back_populates="documents")
+    embedding = Column(JSON, nullable=True)
     
     def __repr__(self):
         return f"Document(id={self.id}, filename={self.filepath}, preview={self.preview})"

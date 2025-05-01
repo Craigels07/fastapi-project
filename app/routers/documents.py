@@ -5,20 +5,12 @@ from pathlib import Path
 import os
 import mimetypes
 from app.service.llama_index import LlamaIndexService
-from langchain_community.document_loaders import (
-    PyPDFLoader,
-    TextLoader,
-    Docx2txtLoader,
-    UnstructuredPowerPointLoader,
-    UnstructuredImageLoader,
-    CSVLoader,
-    UnstructuredExcelLoader
-)
+from app.helpers.document_helper import get_document_loader
 
 from tempfile import NamedTemporaryFile
 from app.database import get_db
-from app.crud.llama_index import store_document, search_documents, get_document_by_id
-from app.crud.documents import process_and_store_document
+from app.crud.llama_index import store_document, get_document_by_id
+from app.crud.documents import process_and_store_document, search_documents
 from app.schemas.document import DocumentCreate, DocumentResponse, SearchResponse
 
 UPLOAD_DIR = "uploaded_documents"
@@ -26,34 +18,9 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 llama_service = LlamaIndexService()
 
-# Map file extensions to LangChain document loaders
-LOADER_MAPPING = {
-    ".txt": TextLoader,
-    ".md": TextLoader,
-    ".pdf": PyPDFLoader,
-    ".docx": Docx2txtLoader,
-    ".doc": Docx2txtLoader,
-    ".pptx": UnstructuredPowerPointLoader,
-    ".ppt": UnstructuredPowerPointLoader,
-    ".jpg": UnstructuredImageLoader,
-    ".jpeg": UnstructuredImageLoader,
-    ".png": UnstructuredImageLoader,
-    ".csv": CSVLoader,
-    ".xlsx": UnstructuredExcelLoader,
-    ".xls": UnstructuredExcelLoader
-}
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
-def get_document_loader(file_path: str):
-    """Get the appropriate document loader based on file extension"""
-    ext = Path(file_path).suffix.lower()
-    if ext in LOADER_MAPPING:
-        return LOADER_MAPPING[ext]
-    raise HTTPException(
-        status_code=400,
-        detail=f"Unsupported file type: {ext}. Supported types: {', '.join(LOADER_MAPPING.keys())}"
-    )
 
 @router.post("/", response_model=DocumentResponse)
 async def upload_document(file: UploadFile = File(...), db: Session = Depends(get_db)):

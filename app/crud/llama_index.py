@@ -1,8 +1,7 @@
 from typing import List, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import text
 from app.models.documents import Document
-from app.schemas.document import DocumentCreate, DocumentResponse, SearchResponse
+from app.schemas.document import DocumentCreate, DocumentResponse
 from app.service.llama_index import LlamaIndexService
 
 llama_service = LlamaIndexService()
@@ -66,28 +65,4 @@ def get_document_by_id(db: Session, document_id: int) -> Optional[DocumentRespon
         return DocumentResponse.from_orm(doc)
     return None
 
-def search_documents(db: Session, query: str, limit: int = 5) -> List[SearchResponse]:
-    """Search documents using semantic similarity"""
-    query_embedding = llama_service.get_embedding(query)
-    
-    sql = text("""
-        SELECT d.id, d.doc_metadata->>'filename' as filename, d.content, 
-               1 - (d.embedding <=> :embedding) as similarity
-        FROM documents d
-        ORDER BY d.embedding <=> :embedding
-        LIMIT :limit
-    """)
-    
-    results = db.execute(
-        sql, 
-        {"embedding": query_embedding, "limit": limit}
-    ).fetchall()
 
-    return [
-        SearchResponse(
-            id=row.id,
-            filename=row.filename,
-            content=row.content,
-            similarity=float(row.similarity)
-        ) for row in results
-    ]

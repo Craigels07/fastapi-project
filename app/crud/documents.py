@@ -1,18 +1,19 @@
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores.pgvector import PGVector
+from langchain_openai import OpenAIEmbeddings
+from langchain_postgres import PGVector
 from langchain_core.documents import Document as LangchainDocument
-from app.schemas.document import DocumentResponse
+from app.schemas.document import DocumentResponse, DocumentCreate
 from app.helpers.collection_helpers import get_or_create_collection
-from app.schemas.documents import DocumentCreate
 import mimetypes
 from app.models.documents import Document
-from app.service.llama_index import get_document_loader
+from app.helpers.document_helper import get_document_loader
 from uuid import uuid4
 from fastapi.encoders import jsonable_encoder
-
+from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 import os
+from typing import List, Optional
+from app.schemas.document import DocumentCreate, DocumentResponse, SearchResponse
 
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -35,16 +36,14 @@ async def process_and_store_document(db, file, file_path):
     # Embedding
     embeddings = OpenAIEmbeddings(api_key=OPENAI_API_KEY, model="text-embedding-3-small")
 
-    # Vector store
     vectorstore = PGVector(
-        embeddings=embeddings,
-        collection_name=collection.name,
         connection=DATABASE_URL,
+        collection_name=collection.name,
+        embeddings=embeddings,
         use_jsonb=True,
     )
 
     doc_data = DocumentCreate(
-        filename=file.filename,
         content_type=file.content_type or mimetypes.guess_type(file.filename)[0] or "application/octet-stream",
         filepath=str(file_path),
         preview=text_content[:300],  # Just a short snippet
@@ -52,7 +51,7 @@ async def process_and_store_document(db, file, file_path):
         collection_id=collection.id
     )
 
-    document = Document(**doc_data.dict())
+    document = Document(**doc_data.model_dump())
     db.add(document)
     db.commit()
     db.refresh(document)
@@ -69,6 +68,8 @@ async def process_and_store_document(db, file, file_path):
                     "document_id": document.id,
                     "filename": file.filename,
                     "collection": collection.name,
+                    "collection_id": collection.id,
+                    "preview": text_content[:300],
                     "source": "upload",
                 }
             )
@@ -78,3 +79,33 @@ async def process_and_store_document(db, file, file_path):
 
     return [DocumentResponse(**jsonable_encoder(document))]
 
+
+def search_documents(db: Session, query: str, limit: int = 5) -> List[SearchResponse]:
+    """Search documents using semantic similarity"""
+
+    responses = []
+
+    collection = get_or_create_collection(db, "UDM")
+
+    embeddings = OpenAIEmbeddings(api_key=OPENAI_API_KEY, model="text-embedding-3-small")
+
+    vectorstore = PGVector(
+        connection=DATABASE_URL,
+        collection_name=collection.name,
+        embeddings=embeddings,
+        use_jsonb=True,
+    )
+    results = vectorstore.similarity_search(query, k=limit)
+
+    for result in results:
+        responses.append(
+            SearchResponse(
+                id=result.metadata.get("document_id") or result.metadata.get("id"),
+                filename=result.metadata.get("filename"),
+                preview=result.metadata.get("preview", ""),
+                collection_id=result.metadata.get("collection_id") or 0,
+                similarity=result.metadata.get("similarity", 1.0) 
+            )
+        )
+
+    return responses

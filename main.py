@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from app.routers import documents, file, user
-
+import uvicorn  
 
 app = FastAPI()
 
@@ -11,3 +11,7 @@ def read_root():
 app.include_router(user.router)
 app.include_router(file.router)
 app.include_router(documents.router)
+
+
+if __name__ == '__main__':
+    uvicorn.run(app, host='0.0.0.0', port=8000)

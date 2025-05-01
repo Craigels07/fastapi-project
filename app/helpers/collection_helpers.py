@@ -1,4 +1,4 @@
-from app.models.collections import Collection
+from app.models.documents import Collection
 
 def get_or_create_collection(session, name: str = "default", source_type="manual"):
     normalized_name = name.strip().lower()
