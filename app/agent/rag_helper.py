@@ -2,14 +2,23 @@
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END
 from langchain_core.messages import SystemMessage, HumanMessage, RemoveMessage
-
-
+from langchain_openai import OpenAIEmbeddings
+from langchain_postgres import PGVector
+from app.helpers.collection_helpers import get_or_create_collection
+from dotenv import load_dotenv
+import os
+from app.database import SessionLocal
+from typing import List
+from app.schemas.document import SearchResponse
 # Models:
 from app.agent.models import MessagState
 
-model = ChatOpenAI(model_name="gpt-4o-mini", temperature=0)
+load_dotenv()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-def call_model(state: MessagState):
+
+def call_model(state: MessagState, model: ChatOpenAI):
 
     # Get summary if it exists
     summary = state.get("summary", "")
@@ -29,8 +38,7 @@ def call_model(state: MessagState):
     response = model.invoke(messages)
     return {"messages": response}
 
-
-def summarize_conversation(state: MessagState):
+def summarize_conversation(state: MessagState, model: ChatOpenAI):
 
     # First, we get any existing summary
     summary = state.get("summary", "")
@@ -55,8 +63,6 @@ def summarize_conversation(state: MessagState):
     delete_messages = [RemoveMessage(id=m.id) for m in state["messages"][:-2]]
     return {"summary": response.content, "messages": delete_messages}
 
-
-# Determine whether to end or summarize the conversation
 def should_continue(state: MessagState):
 
     """Return the next node to execute."""
@@ -67,7 +73,40 @@ def should_continue(state: MessagState):
     if len(messages) > 6:
         return "summarize_conversation"
 
-    # Otherwise we can just end
+    # Determine whether to end or summarize the conversation
     return END
 
+def search_documents(query: str, limit: int = 5) -> List[SearchResponse]:
+    """Search documents using semantic similarity"""
+
+    responses = []
+    with SessionLocal() as db:
+        collection = get_or_create_collection(db, "craig_test")
+
+        embeddings = OpenAIEmbeddings(api_key=OPENAI_API_KEY, model="text-embedding-3-small")
+
+        vectorstore = PGVector(
+            connection=DATABASE_URL,
+        collection_name=collection.name,
+        embeddings=embeddings,
+        use_jsonb=True,
+    )
+    results = vectorstore.similarity_search(query, k=limit)
+
+    for result in results:
+        responses.append(
+            SearchResponse(
+                id=result.metadata.get("document_id") or result.metadata.get("id"),
+                filename=result.metadata.get("filename"),
+                preview=result.metadata.get("preview", ""),
+                collection_id=result.metadata.get("collection_id") or 0,
+                similarity=result.metadata.get("similarity", 1.0) 
+            )
+        )
+
+    return responses
+
+def get_tools():
+    """Get the tools available to the agent."""
+    return [search_documents]
     

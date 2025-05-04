@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from typing import Dict, Any, Optional
 
+
 class DocumentBase(BaseModel):
     content_type: str
     filepath: str
@@ -14,6 +15,8 @@ class DocumentCreate(DocumentBase):
 class DocumentResponse(BaseModel):
     id: int
     collection_id: int
+    doc_metadata: Optional[Dict[str, Any]] = None
+    preview: Optional[str] = None
     class Config:
         from_attributes = True
 

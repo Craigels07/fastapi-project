@@ -4,6 +4,7 @@ psycopg
 psycopg-pool
 pgvector
 psycopg[binary]
+psycopg2-binary
 
 sqlalchemy
 alembic

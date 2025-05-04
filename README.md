@@ -5,12 +5,11 @@ This is a FastAPI-based project designed to handle file uploads and user managem
 
 ## Features
 - User Registration
-- File uploads and management
+- Document uploads and management
 - Database-backed storage with PostgreSQL
 - Automatic schema migrations with Alembic
 
 ## Next Steps
-- Integrate LlamaIndex for indexing & retrieval
 - Connect LangChain for query processing
 - Integrate LLM (OpenAI API)
 - Enable streaming responses for better UX

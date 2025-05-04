@@ -6,12 +6,13 @@ import os
 import mimetypes
 from app.service.llama_index import LlamaIndexService
 from app.helpers.document_helper import get_document_loader
-
+from langchain_core.messages import HumanMessage
 from tempfile import NamedTemporaryFile
 from app.database import get_db
 from app.crud.llama_index import store_document, get_document_by_id
 from app.crud.documents import process_and_store_document, search_documents
 from app.schemas.document import DocumentCreate, DocumentResponse, SearchResponse
+from app.agent.rag_agent import RagAgent
 
 UPLOAD_DIR = "uploaded_documents"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -22,7 +23,7 @@ llama_service = LlamaIndexService()
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 
-@router.post("/", response_model=DocumentResponse)
+@router.post("/", response_model=DocumentResponse) # Deprecated 
 async def upload_document(file: UploadFile = File(...), db: Session = Depends(get_db)):
     """Upload a document and create its vector embedding"""
     # Save file
@@ -61,7 +62,6 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
             file_path.unlink()
         raise HTTPException(status_code=500, detail=f"Error processing document: {str(e)}")
 
-
 @router.post("/chunked", response_model=List[DocumentResponse])
 async def upload_document_chunked(file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
@@ -78,7 +78,6 @@ async def upload_document_chunked(file: UploadFile = File(...), db: Session = De
     finally:
         if tmp_path.exists():
             tmp_path.unlink()
-
 
 @router.post("/local-chunked", response_model=List[DocumentResponse])
 async def upload_local_document_chunked(file: UploadFile = File(...), db: Session = Depends(get_db)):
@@ -101,6 +100,20 @@ async def search_docs(query: str, limit: int = 5, db: Session = Depends(get_db))
     
     return results
 
+@router.get("/rag_agent")
+async def rag_agent(query: str, thread_id: str, limit: int = 5, db: Session = Depends(get_db)):
+    rag_agent = RagAgent(thread_id=thread_id)
+    messages = [HumanMessage(content=query, role="human")]
+    result =  await rag_agent.run(messages)
+    # result =  await rag_agent.run([{
+    #     "content": query,
+    #     "role": "human"
+    # }])
+    # re2 = await rag_agent.display_graph()
+    # print(re2)
+    return result
+
+
 @router.get("/{document_id}", response_model=DocumentResponse)
 async def get_document(document_id: int, db: Session = Depends(get_db)):
     """Get a specific document by ID"""
@@ -109,25 +122,3 @@ async def get_document(document_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Document not found")
     return doc
 
-
-@router.post("/ask")
-async def ask_question(
-    question: str,
-    limit: int = 5,
-    db: Session = Depends(get_db)
-):
-    """Ask a question about the documents"""
-    # First retrieve relevant documents
-    results = search_documents(db, question, limit)
-    
-    # Get answer from LLM
-    answer = llama_service.ask_question(
-        question=question,
-        docs=[r.content for r in results]
-    )
-    
-    return {
-        "question": question,
-        "answer": answer,
-        "sources": results
-    }
