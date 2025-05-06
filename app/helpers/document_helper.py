@@ -5,7 +5,7 @@ from langchain_community.document_loaders import (
     UnstructuredPowerPointLoader,
     UnstructuredImageLoader,
     CSVLoader,
-    UnstructuredExcelLoader
+    UnstructuredExcelLoader,
 )
 from pathlib import Path
 from fastapi import HTTPException
@@ -24,8 +24,9 @@ LOADER_MAPPING = {
     ".png": UnstructuredImageLoader,
     ".csv": CSVLoader,
     ".xlsx": UnstructuredExcelLoader,
-    ".xls": UnstructuredExcelLoader
+    ".xls": UnstructuredExcelLoader,
 }
+
 
 def get_document_loader(file_path: str):
     """Get the appropriate document loader based on file extension"""
@@ -34,5 +35,5 @@ def get_document_loader(file_path: str):
         return LOADER_MAPPING[ext]
     raise HTTPException(
         status_code=400,
-        detail=f"Unsupported file type: {ext}. Supported types: {', '.join(LOADER_MAPPING.keys())}"
+        detail=f"Unsupported file type: {ext}. Supported types: {', '.join(LOADER_MAPPING.keys())}",
     )

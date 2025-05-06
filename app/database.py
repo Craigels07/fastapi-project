@@ -15,11 +15,14 @@ engine = create_engine(DATABASE_URL)
 # Create session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+
 # Define Base for models
 class Base(DeclarativeBase):
     pass
 
+
 # Base = DeclarativeBase
+
 
 # Dependency to get a DB session
 def get_db():

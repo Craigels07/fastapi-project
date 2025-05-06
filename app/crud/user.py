@@ -3,6 +3,7 @@ from typing import List, Optional
 from app.models.user import User
 from app.schemas.user import UserCreate, UserUpdate
 
+
 def create_user(db: Session, user: UserCreate) -> User:
     new_user = User(name=user.name, email=user.email)
     db.add(new_user)
@@ -10,11 +11,14 @@ def create_user(db: Session, user: UserCreate) -> User:
     db.refresh(new_user)
     return new_user
 
+
 def get_user(db: Session, user_id: int) -> Optional[User]:
     return db.query(User).filter(User.id == user_id).first()
 
+
 def get_users(db: Session, skip: int = 0, limit: int = 100) -> List[User]:
     return db.query(User).offset(skip).limit(limit).all()
+
 
 def update_user(db: Session, user_id: int, user: UserUpdate) -> Optional[User]:
     db_user = get_user(db, user_id)
@@ -25,6 +29,7 @@ def update_user(db: Session, user_id: int, user: UserUpdate) -> Optional[User]:
         db.commit()
         db.refresh(db_user)
     return db_user
+
 
 def delete_user(db: Session, user_id: int) -> bool:
     db_user = get_user(db, user_id)

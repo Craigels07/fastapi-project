@@ -7,27 +7,40 @@ from psycopg_pool import AsyncConnectionPool
 from typing import Any, Dict, List, Optional
 from IPython.display import Image, display
 from langgraph.prebuilt import tools_condition, ToolNode
+
 # Models:
 from app.agent.models import MessageState
 
 # Helpers:
-from app.agent.rag_helper import call_model, summarize_conversation, should_continue, get_tools
+from app.agent.rag_helper import (
+    call_model,
+    summarize_conversation,
+    should_continue,
+    get_tools,
+)
 
 
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
+
 class RagAgent:
     """
     Retrieval-Augmented Generation (RAG) Agent for conversational workflows.
     """
+
     def __init__(self, thread_id: str, model=None):
         self.thread_id = thread_id
         self.model = model or ChatOpenAI(model_name="gpt-4o-mini", temperature=0)
-        self.config = {"configurable": {"thread_id": thread_id, "model": self.model,}}
+        self.config = {
+            "configurable": {
+                "thread_id": thread_id,
+                "model": self.model,
+            }
+        }
         self.graph_builder = self._build_agent()
-    
+
     def _build_agent(self):
         """
         Build and return the workflow for the RAG agent.
@@ -43,7 +56,7 @@ class RagAgent:
         workflow.add_edge("tools", "conversation")
         workflow.add_conditional_edges("conversation", should_continue)
         workflow.add_edge("summarize_conversation", END)
-        
+
         return workflow
 
     async def run(self, messages: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -60,15 +73,12 @@ class RagAgent:
             max_size=20,
             kwargs=connection_kwargs,
         ) as pool:
-            
             checkpointer = AsyncPostgresSaver(pool)
             await checkpointer.setup()
-            
+
             graph = self.graph_builder.compile(checkpointer=checkpointer)
 
-            res = await graph.ainvoke(
-                {"messages": messages}, 
-                config=self.config)
+            res = await graph.ainvoke({"messages": messages}, config=self.config)
             return res
 
     async def get_checkpoint(self) -> Optional[Dict[str, Any]]:
@@ -87,7 +97,7 @@ class RagAgent:
             checkpointer = AsyncPostgresSaver(pool)
             await checkpointer.setup()
             return await checkpointer.aget(self.config)
-    
+
     async def display_graph(self):
         """Display workflow graph using an async checkpointer."""
         connection_kwargs = {
@@ -107,5 +117,3 @@ class RagAgent:
                 display(img)
         except Exception as e:
             print(f"Could not display workflow graph: {e}")
-        
-    

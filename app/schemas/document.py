@@ -9,16 +9,20 @@ class DocumentBase(BaseModel):
     doc_metadata: Optional[Dict[str, Any]] = None
     collection_id: int
 
+
 class DocumentCreate(DocumentBase):
     pass
+
 
 class DocumentResponse(BaseModel):
     id: int
     collection_id: int
     doc_metadata: Optional[Dict[str, Any]] = None
     preview: Optional[str] = None
+
     class Config:
         from_attributes = True
+
 
 class SearchResponse(BaseModel):
     id: int

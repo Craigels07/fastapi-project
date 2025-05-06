@@ -7,10 +7,11 @@ import os
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 
+
 class Document(Base):
     __tablename__ = "documents"
 
-    id = Column(Integer, primary_key=True, index=True) 
+    id = Column(Integer, primary_key=True, index=True)
     preview = Column(String, nullable=True)  # Optional short text snippet
     content_type = Column(String, nullable=False)
     filepath = Column(String, nullable=False)
@@ -18,13 +19,16 @@ class Document(Base):
     collection_id = Column(Integer, ForeignKey("collections.id"), nullable=False)
     collection = relationship("Collection", back_populates="documents")
     embedding = Column(JSON, nullable=True)
-    
+
     def __repr__(self):
-        return f"Document(id={self.id}, filename={self.filepath}, preview={self.preview})"
-    
+        return (
+            f"Document(id={self.id}, filename={self.filepath}, preview={self.preview})"
+        )
+
 
 class Collection(Base):
     """Collection used to source documents"""
+
     __tablename__ = "collections"
 
     id = Column(Integer, primary_key=True, index=True)

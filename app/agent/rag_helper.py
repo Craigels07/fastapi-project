@@ -1,4 +1,3 @@
-
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END
 from langchain_core.messages import SystemMessage, HumanMessage, RemoveMessage
@@ -10,6 +9,7 @@ import os
 from app.database import SessionLocal
 from typing import Dict, Any, List
 from app.schemas.document import SearchResponse
+
 # Models:
 from app.agent.models import MessageState
 
@@ -21,11 +21,11 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 def call_model(state: MessageState, config: Dict[str, Any]):
     """Call the model with the current state of the conversation."""
-    
+
     model = config["configurable"]["model"]
-    
+
     summary = state.get("summary", "")
-    
+
     if summary:
         system_message = f"Summary of conversation earlier: {summary}"
         messages = [SystemMessage(content=system_message)] + state["messages"]
@@ -33,11 +33,9 @@ def call_model(state: MessageState, config: Dict[str, Any]):
         messages = state["messages"]
 
     response = model.invoke(messages)
-    
-    return {
-        "messages": response,
-        "summary": summary
-    }
+
+    return {"messages": response, "summary": summary}
+
 
 def summarize_conversation(state: MessageState, config: Dict[str, Any]):
     """
@@ -51,7 +49,6 @@ def summarize_conversation(state: MessageState, config: Dict[str, Any]):
 
     # Create our summarization prompt
     if summary:
-
         # A summary already exists
         summary_message = (
             f"This is summary of the conversation to date: {summary}\n\n"
@@ -69,6 +66,7 @@ def summarize_conversation(state: MessageState, config: Dict[str, Any]):
     delete_messages = [RemoveMessage(id=m.id) for m in state["messages"][:-2]]
     return {"summary": response.content, "messages": delete_messages, "model": model}
 
+
 def should_continue(state: MessageState, config: Dict[str, Any]):
     """Return the next node to execute."""
 
@@ -80,6 +78,7 @@ def should_continue(state: MessageState, config: Dict[str, Any]):
 
     # Determine whether to end or summarize the conversation
     return END
+
 
 def search_documents(query: str, limit: int = 5) -> List[SearchResponse]:
     """
@@ -103,14 +102,16 @@ def search_documents(query: str, limit: int = 5) -> List[SearchResponse]:
     with SessionLocal() as db:
         collection = get_or_create_collection(db, "craig_test")
 
-        embeddings = OpenAIEmbeddings(api_key=OPENAI_API_KEY, model="text-embedding-3-small")
+        embeddings = OpenAIEmbeddings(
+            api_key=OPENAI_API_KEY, model="text-embedding-3-small"
+        )
 
         vectorstore = PGVector(
             connection=DATABASE_URL,
-        collection_name=collection.name,
-        embeddings=embeddings,
-        use_jsonb=True,
-    )
+            collection_name=collection.name,
+            embeddings=embeddings,
+            use_jsonb=True,
+        )
     results = vectorstore.similarity_search(query, k=limit)
 
     for result in results:
@@ -120,15 +121,17 @@ def search_documents(query: str, limit: int = 5) -> List[SearchResponse]:
                 filename=result.metadata.get("filename"),
                 preview=result.metadata.get("preview", ""),
                 collection_id=result.metadata.get("collection_id") or 0,
-                similarity=result.metadata.get("similarity", 1.0) 
+                similarity=result.metadata.get("similarity", 1.0),
             )
         )
 
     return responses
 
+
 def get_tools():
     """Get the tools available to the agent."""
     return [search_documents]
+
 
 def model_with_tools():
     """

@@ -1,6 +1,7 @@
 from datetime import datetime
 from pydantic import BaseModel
 
+
 class FileBase(BaseModel):
     filename: str
     filetype: str
@@ -9,6 +10,7 @@ class FileBase(BaseModel):
 
 class FileCreate(FileBase):
     pass
+
 
 class FileResponse(FileBase):
     id: int

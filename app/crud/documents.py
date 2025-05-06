@@ -19,6 +19,7 @@ load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
+
 async def process_and_store_document(db, file, file_path):
     """Process and store a document with vector embeddings"""
     # Load and process document
@@ -34,7 +35,9 @@ async def process_and_store_document(db, file, file_path):
     chunks = text_splitter.create_documents([text_content])
 
     # Embedding
-    embeddings = OpenAIEmbeddings(api_key=OPENAI_API_KEY, model="text-embedding-3-small")
+    embeddings = OpenAIEmbeddings(
+        api_key=OPENAI_API_KEY, model="text-embedding-3-small"
+    )
 
     vectorstore = PGVector(
         connection=DATABASE_URL,
@@ -44,11 +47,13 @@ async def process_and_store_document(db, file, file_path):
     )
 
     doc_data = DocumentCreate(
-        content_type=file.content_type or mimetypes.guess_type(file.filename)[0] or "application/octet-stream",
+        content_type=file.content_type
+        or mimetypes.guess_type(file.filename)[0]
+        or "application/octet-stream",
         filepath=str(file_path),
         preview=text_content[:300],  # Just a short snippet
         doc_metadata={"filename": file.filename, "num_chunks": len(chunks)},
-        collection_id=collection.id
+        collection_id=collection.id,
     )
 
     document = Document(**doc_data.model_dump())
@@ -57,7 +62,6 @@ async def process_and_store_document(db, file, file_path):
     db.refresh(document)
 
     docs = []
-    
 
     for chunk in chunks:
         docs.append(
@@ -71,7 +75,7 @@ async def process_and_store_document(db, file, file_path):
                     "collection_id": collection.id,
                     "preview": text_content[:300],
                     "source": "upload",
-                }
+                },
             )
         )
 
@@ -87,7 +91,9 @@ def search_documents(db: Session, query: str, limit: int = 5) -> List[SearchResp
 
     collection = get_or_create_collection(db, "craig_test")
 
-    embeddings = OpenAIEmbeddings(api_key=OPENAI_API_KEY, model="text-embedding-3-small")
+    embeddings = OpenAIEmbeddings(
+        api_key=OPENAI_API_KEY, model="text-embedding-3-small"
+    )
 
     vectorstore = PGVector(
         connection=DATABASE_URL,
@@ -104,7 +110,7 @@ def search_documents(db: Session, query: str, limit: int = 5) -> List[SearchResp
                 filename=result.metadata.get("filename"),
                 preview=result.metadata.get("preview", ""),
                 collection_id=result.metadata.get("collection_id") or 0,
-                similarity=result.metadata.get("similarity", 1.0) 
+                similarity=result.metadata.get("similarity", 1.0),
             )
         )
 

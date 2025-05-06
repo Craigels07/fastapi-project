@@ -9,8 +9,8 @@ load_dotenv()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-class LlamaIndexService:
 
+class LlamaIndexService:
     def __init__(self):
         """
         Initialize the LlamaIndexService.
@@ -24,7 +24,7 @@ class LlamaIndexService:
             chunk_size=1000,
             chunk_overlap=200,
             length_function=len,
-            separators=["\n\n", "\n", " ", ""]
+            separators=["\n\n", "\n", " ", ""],
         )
 
         self.client = OpenAI(api_key=OPENAI_API_KEY)
@@ -36,7 +36,7 @@ class LlamaIndexService:
     def chunk_text(self, text: str) -> list[str]:
         """Split text into chunks"""
         return self.text_splitter.split_text(text)
-    
+
     def ask_question(self, question: str, docs: list[str]) -> str:
         """Answer questions using retrieved documents"""
         context = "\n\n".join(docs)
