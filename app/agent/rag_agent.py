@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 from IPython.display import Image, display
 from langgraph.prebuilt import tools_condition, ToolNode
 # Models:
-from app.agent.models import MessagState
+from app.agent.models import MessageState
 
 # Helpers:
 from app.agent.rag_helper import call_model, summarize_conversation, should_continue, get_tools
@@ -22,21 +22,18 @@ class RagAgent:
     """
     Retrieval-Augmented Generation (RAG) Agent for conversational workflows.
     """
-
-    def __init__(self, thread_id: str):
+    def __init__(self, thread_id: str, model=None):
         self.thread_id = thread_id
-        
-        self.model = ChatOpenAI(model_name="gpt-4o-mini", temperature=0)
-        self.llm_with_tools = self.model.bind_tools(get_tools())
-        self.config = {"configurable": {"thread_id": thread_id}, "model": self.llm_with_tools,}
-        self.workflow = self._build_agent()
-
-    @staticmethod
-    def _build_agent():
+        self.model = model or ChatOpenAI(model_name="gpt-4o-mini", temperature=0)
+        self.config = {"configurable": {"thread_id": thread_id, "model": self.model,}}
+        self.graph_builder = self._build_agent()
+    
+    def _build_agent(self):
         """
         Build and return the workflow for the RAG agent.
         """
-        workflow = StateGraph(MessagState)
+        workflow = StateGraph(MessageState)
+
         workflow.add_node("conversation", call_model)
         workflow.add_node("tools", ToolNode(get_tools()))
         workflow.add_node("summarize_conversation", summarize_conversation)
@@ -44,9 +41,9 @@ class RagAgent:
         workflow.add_edge(START, "conversation")
         workflow.add_conditional_edges("conversation", tools_condition)
         workflow.add_edge("tools", "conversation")
-
         workflow.add_conditional_edges("conversation", should_continue)
         workflow.add_edge("summarize_conversation", END)
+        
         return workflow
 
     async def run(self, messages: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -63,11 +60,15 @@ class RagAgent:
             max_size=20,
             kwargs=connection_kwargs,
         ) as pool:
+            
             checkpointer = AsyncPostgresSaver(pool)
             await checkpointer.setup()
-            graph = self.workflow.compile(checkpointer=checkpointer)
+            
+            graph = self.graph_builder.compile(checkpointer=checkpointer)
 
-            res = await graph.ainvoke({"messages": messages, "model": self.llm_with_tools}, config=self.config)            # checkpoint = await checkpointer.get(self.config)
+            res = await graph.ainvoke(
+                {"messages": messages}, 
+                config=self.config)
             return res
 
     async def get_checkpoint(self) -> Optional[Dict[str, Any]]:

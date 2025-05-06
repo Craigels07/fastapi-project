@@ -6,11 +6,13 @@ This is a FastAPI-based project designed to handle file uploads and user managem
 ## Features
 - User Registration
 - Document uploads and management
+- Document search using semantic similarity
 - Database-backed storage with PostgreSQL
 - Automatic schema migrations with Alembic
 
 ## Next Steps
 - Connect LangChain for query processing
+- DevContainer for testing
 - Integrate LLM (OpenAI API)
 - Enable streaming responses for better UX
 - Build a simple frontend (React, Next.js)

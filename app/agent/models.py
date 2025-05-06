@@ -1,6 +1,6 @@
 
 from langgraph.graph import MessagesState
+from typing import Optional
 
-
-class MessagState(MessagesState):
-    summary: str
+class MessageState(MessagesState):
+    summary: Optional[str] = None
