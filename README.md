@@ -1,29 +1,42 @@
-# FastAPI Project
+# 🚀 FastAPI Document Management Backend
 
 ## Overview
-This project is a modular, production-ready FastAPI-based backend designed for document management and user operations. It supports user registration, file/document uploads, and semantic search powered by vector embeddings. Built on PostgreSQL (with pgvector), SQLAlchemy, and Alembic, the system is optimized for LLM integration, particularly with LangChain and OpenAI models like GPT-4o.
+This is a modular, production-ready backend built with **FastAPI** for managing users, documents, and AI-assisted semantic search. The project leverages **PostgreSQL + pgvector**, **SQLAlchemy**, **Alembic**, and integrates **LangChain** + **OpenAI (GPT-4o)** for powerful document-based LLM workflows.
 
-## Features
-- **User Registration & Authentication:** Secure endpoints for user sign-up, login, and token-based access control.
-- **Document Uploads & Management:** Upload documents via API; automatically embed and index them for retrieval.
-- **Semantic Document Search:** All documents transformed into vector embeddings upon upload, allowing for efficient semantic similarity search directly in the database. Users can query for documents by meaning, not just keywords, via endpoints.
-- **LangChain & AI Agent Integration:** The codebase is already integrated with LangChain and supports LLM-based workflows (e.g., OpenAI GPT-4o). The agent can process natural language queries, use tools (such as semantic document search), and summarize conversations, as implemented in app/agent/rag_agent.py and app/agent/rag_helper.py.
+## Core Features
+- **User Registration & Authentication:**
+   - Register, login, and secure endpoints via token-based access control.
+- **Document Uploads & Management:**
+   - Upload and manage documents via API.
+   - Each document is embedded and stored as a vector for semantic retrieval.
+- **Semantic Document Search:**
+    - Vector-based document search using pgvector.
+    - Users can query for documents by meaning, not just keywords, via endpoints.
+- **LangChain & AI Agent Integration:**
+    - The codebase is already integrated with LangChain and supports LLM-based workflows (e.g., OpenAI GPT-4o).
+    - Tools for natural language queries, summarization, and contextual search.
+    - Core logic in `app/agent/rag_agent.py` and `rag_helper.py`.
 
 ## Roadmap/Next Steps
 
-- **DevContainer Support:** Add .devcontainer/ directory with Python, PostgreSQL, and VS Code config for one-click VS Code development environments.
-- **Pluggable AI Tooling:** Extend the get_tools() function to support summarization, translation, OCR, and other AI tools.
-- **User Roles & Permissions:** Extend authentication to support user roles (admin, editor, viewer) and granular document access control.
-- **Frontend Development:** Build a simple React or Next.js frontend for user registration, document upload, search, and chat-based interactions with the agent.
-- **Performance Optimization & Deployment:** Containerize the app with Docker, add production-ready settings, and prepare for cloud deployment (e.g., Railway, Azure, AWS).
+- **DevContainer Support:**
+   - Add `.devcontainer/` with PostgreSQL & Python setup for VS Code.
+- **Pluggable AI Tooling:**
+   - Extend `get_tools()` to include OCR, summarization, translation, etc.
+- **User Roles & Permissions:**
+   - Add roles (admin, editor, viewer) with per-document permissions.
+- **Frontend Development:**
+   - Build a basic React/Next.js frontend for UX.
+- **Performance Optimization & Deployment:**
+   - Containerize the app with Docker, add production-ready settings, and prepare for cloud deployment (e.g., Railway, Azure, AWS).
 
 
-## Installation
+## ⚙️ Installation
 ### Prerequisites
 Ensure you have the following installed:
 - Python 3.12+
 - PostgreSQL
-- Virtual environment tool (optional but recommended)
+- (Optional) `virtualenv` or `venv`
 
 ### Setup
 1. Clone the repository:
@@ -43,9 +56,11 @@ Ensure you have the following installed:
 4. Set up environment variables (e.g., `.env` file for database connection):
    ```
    DATABASE_URL=postgresql://user:password@localhost/dbname
+   OPENAI_API_KEY=your-open-ai-key
    ```
 5. Run database migrations:
    ```sh
+   alembic revision --autogenerate -m "migration commit message"
    alembic upgrade head
    ```
 
@@ -55,9 +70,7 @@ To start the FastAPI server, use:
 uvicorn main:app --reload
 ```
 
-## Database Migrations
-To apply database migrations:
-```sh
-alembic revision --autogenerate -m "migration commit message"
-alembic upgrade head
-```
+## 📝 Notes
+- Project uses pgvector for native similarity search in PostgreSQL.
+- Designed for modular LLM agent workflows using LangChain + OpenAI.
+- Core logic and agent tools can be extended easily for new AI capabilities.
