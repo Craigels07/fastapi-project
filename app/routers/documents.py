@@ -13,7 +13,7 @@ from app.crud.llama_index import store_document, get_document_by_id
 from app.crud.documents import process_and_store_document, search_documents
 from app.schemas.document import DocumentCreate, DocumentResponse, SearchResponse
 from app.agent.rag_agent import RagAgent
-from app.agent.rag_helper import model_with_tools
+from app.helpers.rag_helper import model_with_tools
 
 
 UPLOAD_DIR = "uploaded_documents"

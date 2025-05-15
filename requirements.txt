@@ -1,5 +1,5 @@
 fastapi[all]
-
+uvicorn
 psycopg
 psycopg-pool
 pgvector
@@ -44,3 +44,10 @@ python-pptx
 openpyxl
 pandas
 pdfminer.six
+
+
+# twilio
+twilio
+
+#openAI
+openai

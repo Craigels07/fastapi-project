@@ -12,7 +12,7 @@ from langgraph.prebuilt import tools_condition, ToolNode
 from app.agent.models import MessageState
 
 # Helpers:
-from app.agent.rag_helper import (
+from app.helpers.rag_helper import (
     call_model,
     summarize_conversation,
     should_continue,
