@@ -108,20 +108,3 @@ class WhatsAppAgent:
                 {"user_input": user_input, "user_phone": user_phone}, config=self.config
             )
             return res
-
-
-# Example usage
-# if __name__ == "__main__":
-#     account_sid = os.getenv("TWILIO_ACCOUNT_SID")
-#     auth_token = os.getenv("TWILIO_AUTH_TOKEN")
-#     whatsapp_agent = WhatsAppAgent(account_sid, auth_token)
-#     # Handle a message (example placeholders used here)
-#     user_id = "user123"
-#     message = "Check my order status"
-#     shop_info = {
-#         "woo_url": "https://yourstore.com",
-#         "consumer_key": "ck_your_key",
-#         "consumer_secret": "cs_your_secret",
-#     }
-#     response = whatsapp_agent.handle_message(user_id, message, shop_info)
-#     print(response)
