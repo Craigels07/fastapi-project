@@ -1,8 +1,6 @@
 import os
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
-from langchain.agents.agent import AgentExecutor
-from twilio.rest import Client
 from app.service.woo.service import WooService
 from app.agent.tools.woo_tools import (
     WooCommerceOrderStatusTool,
@@ -22,7 +20,7 @@ from app.helpers.whatsapp_helper import (
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg_pool import AsyncConnectionPool
-from typing import Any, List
+from typing import Any
 from langgraph.prebuilt import tools_condition, ToolNode
 from app.agent.models import MessageState
 
@@ -108,3 +106,4 @@ class WhatsAppAgent:
                 {"user_input": user_input, "user_phone": user_phone}, config=self.config
             )
             return res
+
