@@ -1,11 +1,6 @@
 from sqlalchemy import Column, Integer, String, JSON, ForeignKey, Text
 from sqlalchemy.orm import relationship
 from app.database import Base
-from dotenv import load_dotenv
-import os
-
-load_dotenv()
-DATABASE_URL = os.getenv("DATABASE_URL")
 
 
 class Document(Base):
