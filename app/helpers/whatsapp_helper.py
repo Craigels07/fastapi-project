@@ -4,7 +4,6 @@ import os
 from twilio.rest import Client  # type: ignore
 from dotenv import load_dotenv
 
-
 load_dotenv()
 
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
