@@ -56,7 +56,7 @@ def downgrade() -> None:
         "documents",
         sa.Column(
             "embedding",
-            pgvector.sqlalchemy.vector.VECTOR(dim=1536),
+            pgvector.sqlalchemy.vector.VECTOR(dim=1536),  # noqa: F821
             autoincrement=False,
             nullable=True,
         ),
