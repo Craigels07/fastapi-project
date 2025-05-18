@@ -12,15 +12,22 @@ from app.models.user import Organization
 
 
 class WooService:
-    def __init__(self, client: WooCommerceAPIClient, organization_id: Organization):  # Adjusted type hint
+    def __init__(
+        self, client: WooCommerceAPIClient, organization_id: Organization
+    ):  # Adjusted type hint
         self.client = client
         self.organization_id = organization_id
-        self.woo_url, self.consumer_key, self.consumer_secret = self.retrieve_organization()
-    
+        self.woo_url, self.consumer_key, self.consumer_secret = (
+            self.retrieve_organization()
+        )
+
     def retrieve_organization(self):
         organization = Organization.objects.get(id=self.organization_id)
-        return organization.woo_url, organization.consumer_key, organization.consumer_secret
-
+        return (
+            organization.woo_url,
+            organization.consumer_key,
+            organization.consumer_secret,
+        )
 
     def _request(self, method, endpoint, params=None, data=None):
         return self.client._request(method, endpoint, params=params, data=data)

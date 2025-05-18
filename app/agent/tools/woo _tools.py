@@ -54,7 +54,3 @@ class WooCommerceListProductsTool(BaseTool):
 
     async def _arun(self, query: Optional[str] = None) -> str:
         return self._run(query)
-
-
-class WooCommerceRetrieveOrderTool(BaseTool):
-# Tool instances should be created and added to a collection where needed, not in this module.

@@ -106,4 +106,3 @@ class WhatsAppAgent:
                 {"user_input": user_input, "user_phone": user_phone}, config=self.config
             )
             return res
-
