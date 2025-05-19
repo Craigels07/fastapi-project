@@ -1,52 +1,108 @@
-from langchain.memory import ConversationBufferMemory
-from langchain.agents import initialize_agent, AgentType
-from langchain.chat_models import ChatOpenAI
-from langchain.agents.agent import AgentExecutor
-from twilio.rest import Client
-
+import os
+from dotenv import load_dotenv
+from langchain_openai import ChatOpenAI
+from app.service.woo.service import WooService
+from app.agent.tools.woo_tools import (
+    WooCommerceOrderStatusTool,
+    WooCommerceListProductsTool,
+)
+from app.service.woo.client import WooCommerceAPIClient
 from typing import Dict
+from app.helpers.whatsapp_helper import (
+    send_whatsapp_message,
+    receive_message,
+    parse_intent,
+    retrieve_conversation_context,
+    run_agent_reasoning,
+    route_tool,
+    generate_response,
+)
+from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from psycopg_pool import AsyncConnectionPool
+from typing import Any
+from langgraph.prebuilt import tools_condition, ToolNode
+from app.agent.models import MessageState
+
+load_dotenv()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+DATABASE_URL = os.getenv("DATABASE_URL")
+WOO_COMMERCE_BASE_URL = os.getenv("WOO_COMMERCE_BASE_URL")
 
 
 class WhatsAppAgent:
-    def __init__(self, account_sid, auth_token):
-        self.agents: Dict[str, AgentExecutor] = {}
-        self.account_sid = account_sid
-        self.auth_token = auth_token
-        self.client = Client(self.account_sid, self.auth_token)
-
-    def send_whatsapp_message(self, body, from_number, to_number):
-        _message = self.client.messages.create(
-            body=body,
-            from_=f"whatsapp:+{from_number}",
-            to=f"whatsapp:+{to_number}",
+    def __init__(self, account_sid, auth_token, model=None):
+        self.woo_client = WooCommerceAPIClient(
+            base_url=WOO_COMMERCE_BASE_URL,
+            consumer_key=account_sid,
+            consumer_secret=auth_token,
         )
+        self.model = model or ChatOpenAI(model_name="gpt-4o-mini", temperature=0)
+        self.config = {
+            "configurable": {
+                "model": self.model,
+            }
+        }
+        self.graph_builder = self._build_agent()
 
-    def get_agent(self, user_id: str) -> AgentExecutor:
-        """
-        Get or create a LangChain agent instance for a given WhatsApp user.
-        """
-        if user_id not in self.agents:
-            llm = ChatOpenAI(temperature=0.7)
-            memory = ConversationBufferMemory(
-                memory_key="chat_history", return_messages=True
-            )
-            agent = initialize_agent(
-                tools=[],  # Add tools here if needed
-                llm=llm,
-                agent=AgentType.CHAT_CONVERSATIONAL_REACT_DESCRIPTION,
-                memory=memory,
-                verbose=True,
-            )
-            self.agents[user_id] = agent
-        return self.agents[user_id]
+    def get_woo_tools_for_shop(self, shop: dict):
+        client = WooCommerceAPIClient(
+            base_url=shop["woo_url"],
+            consumer_key=shop["consumer_key"],
+            consumer_secret=shop["consumer_secret"],
+        )
+        service = WooService(client)
 
-    async def handle_message(self, user_id: str, message: str) -> str:
+        return [
+            WooCommerceOrderStatusTool(service),
+            WooCommerceListProductsTool(service),
+        ]
+
+    def _build_agent(self):
         """
-        Process an incoming message and return the agent's response.
+        Build and return the workflow for the RAG agent.
         """
-        agent = self.get_agent(user_id)
-        try:
-            response = await agent.ainvoke({"input": message})
-            return str(response.get("output", response))
-        except Exception as e:
-            return f"Sorry, an error occurred: {str(e)}"
+        workflow = StateGraph(MessageState)
+
+        workflow.add_node("receive_message", receive_message)
+        workflow.add_node("parse_intent", parse_intent)
+        workflow.add_node("retrieve_context", retrieve_conversation_context)
+        workflow.add_node("agent_reasoning", run_agent_reasoning)
+        workflow.add_node("route_tool", route_tool)
+        workflow.add_node("generate_response", generate_response)
+        workflow.add_node("send_message", send_whatsapp_message)
+
+        workflow.set_entry_point("receive_message")
+        workflow.add_edge("receive_message", "parse_intent")
+        workflow.add_edge("parse_intent", "retrieve_context")
+        workflow.add_edge("retrieve_context", "agent_reasoning")
+        workflow.add_edge("agent_reasoning", "route_tool")
+        workflow.add_edge("route_tool", "generate_response")
+        workflow.add_edge("generate_response", "send_message")
+        workflow.add_edge("send_message", END)
+
+        return workflow
+
+    async def run(self, user_input: str, user_phone: str) -> Dict[str, Any]:
+        """
+        Run the RAG agent asynchronously on a list of messages.
+        Uses an async Postgres checkpointer and connection pool.
+        """
+        connection_kwargs = {
+            "autocommit": True,
+            "prepare_threshold": 0,
+        }
+        async with AsyncConnectionPool(
+            conninfo=DATABASE_URL,
+            max_size=10,
+            kwargs=connection_kwargs,
+        ) as pool:
+            checkpointer = AsyncPostgresSaver(pool)
+            await checkpointer.setup()
+
+            graph = self.graph_builder.compile(checkpointer=checkpointer)
+
+            res = await graph.ainvoke(
+                {"user_input": user_input, "user_phone": user_phone}, config=self.config
+            )
+            return res
