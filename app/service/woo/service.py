@@ -1,7 +1,7 @@
 # app/service/woo/service.py
 
 from typing import List, Dict
-from app.clients.woocommerce_client import WooCommerceAPIClient  # Adjusted import
+from app.service.woo.client import WooCommerceAPIClient
 from app.service.woo.utils import (
     simplify_product,
     extract_product_names,
@@ -12,9 +12,7 @@ from app.models.user import Organization
 
 
 class WooService:
-    def __init__(
-        self, client: WooCommerceAPIClient, organization_id: Organization
-    ):  # Adjusted type hint
+    def __init__(self, client: WooCommerceAPIClient, organization_id: Organization):
         self.client = client
         self.organization_id = organization_id
         self.woo_url, self.consumer_key, self.consumer_secret = (

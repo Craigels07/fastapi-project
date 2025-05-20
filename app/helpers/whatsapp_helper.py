@@ -16,9 +16,11 @@ from datetime import datetime
 from app.database import get_db
 from sqlalchemy.orm import Session
 from app.agent.models import WhatsAppMessageState
-from models.whatsapp import WhatsAppUser, WhatsAppMessage
+from app.models.whatsapp import WhatsAppUser, WhatsAppMessage
 from langchain.output_parsers import StructuredOutputParser, ResponseSchema
 import json
+from app.models.user import Organization
+from app.service.woo.service import WooService
 
 load_dotenv()
 
@@ -261,7 +263,9 @@ def retrieve_conversation_context(state: WhatsAppMessageState) -> dict:
     return {**state, "conversation_context": context}
 
 
-async def run_agent_reasoning(state: WhatsAppMessageState) -> dict:
+async def run_agent_reasoning(
+    state: WhatsAppMessageState, config: Dict[str, Any]
+) -> dict:
     """
     Reasoning node that:
     - Examines messagePurpose & messageDetails
@@ -293,6 +297,8 @@ async def run_agent_reasoning(state: WhatsAppMessageState) -> dict:
         "If unclear, ask for clarification politely."
     )
 
+    db: Session = get_db()
+
     organization = (
         db.query(Organization).filter_by(phone_number=user_phone_number).first()
     )
@@ -321,7 +327,7 @@ async def run_agent_reasoning(state: WhatsAppMessageState) -> dict:
         order_id = messageDetails["order_id"]
         woo_service.get_order_by_id(order_id)
 
-    elif messagePurpose == "order_query" and not "order_id" in messageDetails:
+    elif messagePurpose == "order_query" and "order_id" not in messageDetails:
         order_id = messageDetails["order_id"]
         woo_service.get_order_info(order_id)
 
@@ -340,6 +346,9 @@ async def run_agent_reasoning(state: WhatsAppMessageState) -> dict:
         response_text = completion.generations[0][0].text.strip()
 
     # Return updated state with the final response for WhatsApp
+
+    db.close()
+
     return {**state, "agent_response": response_text}
 
 
