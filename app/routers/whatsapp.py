@@ -77,7 +77,7 @@ async def whatsapp_receive(
     "/receive-agent",
     response_class=PlainTextResponse,
     summary="Handle incoming WhatsApp messages using the WhatsApp agent",
-    operation_id="receive",
+    operation_id="receive_agent",
 )
 async def whatsapp_receive_with_agent(
     request: Request,
@@ -85,7 +85,7 @@ async def whatsapp_receive_with_agent(
     Body: str = Form(...),
 ):
     """
-    Handle incoming WhatsApp messages from Twilio.
+    Handle incoming WhatsApp messages from Twilio using the WhatsApp agent.
 
     Args:
         request (Request): The FastAPI request object.
@@ -93,19 +93,19 @@ async def whatsapp_receive_with_agent(
         Body (str): The content of the received message.
 
     Returns:
-        PlainTextResponse: An XML response containing a thank you message.
+        PlainTextResponse: An XML response containing the agent's reply message.
     """
     print(f"Received message from {From}: {Body}")
 
-    # Final call in FastAPI
-    llm_with_tools = (
-        model_with_tools()
-    )  # account_sid, auth_token, thread_id: str, model=None
+    # Create a WhatsApp agent with tools
+    llm_with_tools = model_with_tools()
     whatsapp_agent = WhatsAppAgent(account_sid, auth_token, model=llm_with_tools)
 
-    _agent_result = await whatsapp_agent.run(user_input=Body, user_phone=From)
+    # Process the message through the agent workflow
+    agent_result = await whatsapp_agent.run(user_input=Body, user_phone=From)
+    
+    # Extract the final message from the result
+    # The final_message field should be set by the generate_response node
+    final_message = agent_result.get("final_message", "I'm processing your request...")
 
-    response = MessagingResponse()
-    response.message(_agent_result)
-
-    return PlainTextResponse(content=str(response), media_type="application/xml")
+    return PlainTextResponse(content=str(final_message), media_type="application/xml")
