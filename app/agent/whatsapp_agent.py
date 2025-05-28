@@ -11,7 +11,7 @@ from app.helpers.whatsapp_helper import (
     retrieve_conversation_context,
     run_agent_reasoning,
     generate_response,
-    get_tools
+    get_tools,
 )
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
@@ -26,37 +26,25 @@ WOO_COMMERCE_BASE_URL = os.getenv("WOO_COMMERCE_BASE_URL")
 
 
 class WhatsAppAgent:
-    def __init__(self, account_sid, auth_token, model=None):
-        self.woo_client = WooCommerceAPIClient(
-            base_url=WOO_COMMERCE_BASE_URL,
-            consumer_key=account_sid,
-            consumer_secret=auth_token,
-        )
+    def __init__(
+        self, account_sid=None, auth_token=None, model=None, organization_id=None
+    ):
+        if account_sid and auth_token:
+            self.woo_client = WooCommerceAPIClient(
+                base_url=WOO_COMMERCE_BASE_URL,
+                consumer_key=account_sid,
+                consumer_secret=auth_token,
+            )
+        self.organization_id = organization_id
         self.model = model or ChatOpenAI(model_name="gpt-4o-mini", temperature=0)
-        self.account_sid = account_sid
-        self.auth_token = auth_token
         self.config = {
             "configurable": {
                 "model": self.model,
                 "tools": get_tools(),
-                "woo_client": self.woo_client
+                "woo_client": self.woo_client,
             }
         }
-        # Build the agent workflow graph
         self.workflow = self._build_agent()
-
-    # def get_woo_tools_for_shop(self, shop: dict):
-    #     client = WooCommerceAPIClient(
-    #         base_url=shop["woo_url"],
-    #         consumer_key=shop["consumer_key"],
-    #         consumer_secret=shop["consumer_secret"],
-    #     )
-    #     service = WooService(client)
-
-    #     return [
-    #         WooCommerceOrderStatusTool(service),
-    #         WooCommerceListProductsTool(service),
-    #     ]
 
     def _build_agent(self):
         """
@@ -81,7 +69,9 @@ class WhatsAppAgent:
 
         return workflow
 
-    async def run(self, user_input: str, user_phone: str) -> Dict[str, Any]:
+    async def run(
+        self, user_input: str, whatsapp_message_id: str, user_phone_number: str
+    ) -> Dict[str, Any]:
         """
         Run the RAG agent asynchronously on a list of messages.
         Uses an async Postgres checkpointer and connection pool.
@@ -100,20 +90,20 @@ class WhatsAppAgent:
 
             # Compile the graph with the checkpointer
             compiled_graph = self.workflow.compile(checkpointer=checkpointer)
-            
+
             # Create initial state with user input and phone number
             initial_state = {
                 "received_message": user_input,
-                "user_phone_number": user_phone,
-                "entity_phone_number": "14155238886"  # Default Twilio number, should be configured
+                "whatsapp_message_id": whatsapp_message_id,
+                "organization_id": self.organization_id,
             }
 
             config = self.config.copy()
-            config["configurable"] = self.config["configurable"].copy() 
-            config["configurable"]["thread_id"] = f"whatsapp_{user_phone}"
-            
+            config["configurable"] = self.config["configurable"].copy()
+            config["configurable"]["thread_id"] = f"whatsapp_{user_phone_number}"
+
             # Invoke the graph with the initial state
             result = await compiled_graph.ainvoke(initial_state, config=config)
-            
+
             # Return the final result
             return result

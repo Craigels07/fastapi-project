@@ -6,6 +6,13 @@ from twilio.twiml.messaging_response import MessagingResponse
 from app.helpers.whatsapp_helper import send_whatsapp_message, model_with_tools
 from fastapi.responses import JSONResponse
 from app.agent.whatsapp_agent import WhatsAppAgent
+from app.models.user import Organization
+from app.models.whatsapp import WhatsAppUser, WhatsAppMessage
+from fastapi import Depends, HTTPException
+from sqlalchemy.orm import Session
+from datetime import datetime
+from app.schemas.whatsapp import WhatsAppMessageBase
+from app.database import get_db
 
 router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
 
@@ -81,8 +88,14 @@ async def whatsapp_receive(
 )
 async def whatsapp_receive_with_agent(
     request: Request,
+    db: Session = Depends(get_db),
     From: str = Form(...),
+    To: str = Form(...),
     Body: str = Form(...),
+    MessageSid: str = Form(...),
+    ProfileName: str = Form(None),
+    WaId: str = Form(None),
+    NumMedia: int = Form(0),
 ):
     """
     Handle incoming WhatsApp messages from Twilio using the WhatsApp agent.
@@ -95,15 +108,87 @@ async def whatsapp_receive_with_agent(
     Returns:
         PlainTextResponse: An XML response containing the agent's reply message.
     """
-    print(f"Received message from {From}: {Body}")
+    form = await request.form()
+    form_data = dict(form)
+
+    try:
+        message_data = WhatsAppMessageBase(**form_data)
+        print(f"Parsed message data: {message_data}")
+    except Exception as e:
+        print(f"Validation error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+    to_number = message_data.To.replace("whatsapp:", "")
+    from_number = message_data.From.replace("whatsapp:", "")
+
+    organization = (
+        db.query(Organization)
+        .filter(Organization.phone_number == str(from_number))
+        .first()
+    )
+    if not organization:
+        raise HTTPException(status_code=400, detail="Unknown organization")
+
+    whatsapp_dict = {}
+    for key, value in form.items():
+        whatsapp_dict[key] = value
+
+    user = (
+        db.query(WhatsAppUser)
+        .filter(
+            WhatsAppUser.phone_number == to_number,
+            WhatsAppUser.organization_id == organization.id,
+        )
+        .first()
+    )
+
+    if not user:
+        user = WhatsAppUser(
+            phone_number=to_number,
+            organization_id=organization.id,
+            profile_name=message_data.ProfileName,
+            account_sid=whatsapp_dict["AccountSid"],
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    # media = []
+
+    # for i in range(NumMedia):
+    #     media_url = form.get(f"MediaUrl{i}")
+    #     media_type = form.get(f"MediaContentType{i}")
+    #     if media_url:
+    #         media.append({"url": media_url, "type": media_type})
+
+    message = WhatsAppMessage(
+        user_id=user.id,
+        content=Body,
+        direction="inbound",
+        timestamp=datetime.now().isoformat(),
+        message_sid=MessageSid,
+        wa_id=WaId,
+        profile_name=ProfileName,
+        message_type=whatsapp_dict["MessageType"],
+        num_segments=whatsapp_dict["NumSegments"],
+        num_media=NumMedia,
+        # media=media,
+    )
+    db.add(message)
+    db.commit()
+    db.refresh(message)
 
     # Create a WhatsApp agent with tools
     llm_with_tools = model_with_tools()
-    whatsapp_agent = WhatsAppAgent(account_sid, auth_token, model=llm_with_tools)
+    whatsapp_agent = WhatsAppAgent(
+        account_sid, auth_token, model=llm_with_tools, organization_id=organization.id
+    )
 
     # Process the message through the agent workflow
-    agent_result = await whatsapp_agent.run(user_input=Body, user_phone=From)
-    
+    agent_result = await whatsapp_agent.run(
+        user_input=Body, whatsapp_message_id=message.id, user_phone_number=to_number
+    )
+
     # Extract the final message from the result
     # The final_message field should be set by the generate_response node
     final_message = agent_result.get("final_message", "I'm processing your request...")
