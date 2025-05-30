@@ -27,7 +27,7 @@ WOO_COMMERCE_BASE_URL = os.getenv("WOO_COMMERCE_BASE_URL")
 
 class WhatsAppAgent:
     def __init__(
-        self, account_sid=None, auth_token=None, model=None, organization_id=None
+        self, account_sid=None, auth_token=None, model=None, organization_id=None, to_number=None
     ):
         if account_sid and auth_token:
             self.woo_client = WooCommerceAPIClient(
@@ -42,6 +42,8 @@ class WhatsAppAgent:
                 "model": self.model,
                 "tools": get_tools(),
                 "woo_client": self.woo_client,
+                "organization_id": self.organization_id,
+                "organization_phone_number": to_number,
             }
         }
         self.workflow = self._build_agent()
@@ -96,6 +98,7 @@ class WhatsAppAgent:
                 "received_message": user_input,
                 "whatsapp_message_id": whatsapp_message_id,
                 "organization_id": self.organization_id,
+                "user_phone_number": user_phone_number,
             }
 
             config = self.config.copy()

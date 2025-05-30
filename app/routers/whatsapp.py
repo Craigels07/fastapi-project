@@ -118,14 +118,17 @@ async def whatsapp_receive_with_agent(
         print(f"Validation error: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
-    to_number = message_data.To.replace("whatsapp:", "")
-    from_number = message_data.From.replace("whatsapp:", "")
+    to_number = message_data.To.replace("whatsapp:", "") # This is your Twilio number
+    from_number = message_data.From.replace("whatsapp:", "") # This is the user's number
 
     organization = (
         db.query(Organization)
-        .filter(Organization.phone_number == str(from_number))
+        .filter(Organization.phone_number == str(to_number))
         .first()
     )
+    organization.woo_commerce = True
+    db.commit()
+    print("organization:", organization)
     if not organization:
         raise HTTPException(status_code=400, detail="Unknown organization")
 
@@ -136,15 +139,16 @@ async def whatsapp_receive_with_agent(
     user = (
         db.query(WhatsAppUser)
         .filter(
-            WhatsAppUser.phone_number == to_number,
+            WhatsAppUser.phone_number == from_number,
             WhatsAppUser.organization_id == organization.id,
         )
         .first()
     )
+    print(f"Found user: {user}")
 
     if not user:
         user = WhatsAppUser(
-            phone_number=to_number,
+            phone_number=from_number,
             organization_id=organization.id,
             profile_name=message_data.ProfileName,
             account_sid=whatsapp_dict["AccountSid"],
@@ -181,12 +185,12 @@ async def whatsapp_receive_with_agent(
     # Create a WhatsApp agent with tools
     llm_with_tools = model_with_tools()
     whatsapp_agent = WhatsAppAgent(
-        account_sid, auth_token, model=llm_with_tools, organization_id=organization.id
+        account_sid, auth_token, model=llm_with_tools, organization_id=organization.id, to_number=to_number
     )
 
     # Process the message through the agent workflow
     agent_result = await whatsapp_agent.run(
-        user_input=Body, whatsapp_message_id=message.id, user_phone_number=to_number
+        user_input=Body, whatsapp_message_id=message.id, user_phone_number=from_number
     )
 
     # Extract the final message from the result
