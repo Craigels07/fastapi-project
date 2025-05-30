@@ -2,10 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 
-from app.db.database import get_db
-from app.models.user import Organization
+from app.database import get_db
+from app.models.user import Organization, User
 from app.service.woo.client import WooCommerceAPIClient
 from app.service.woo.service import WooService
+from app.auth.dependencies import get_current_active_user, check_organization_access
 
 router = APIRouter(
     prefix="/services",
@@ -16,10 +17,13 @@ router = APIRouter(
 
 @router.get("/woocommerce/products", response_model=List[Dict[str, Any]])
 async def test_woocommerce_products(
-    organization_id: str,
+    organization_id: int,
     query: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
 ):
+    # Check if user has access to this organization
+    check_organization_access(organization_id, current_user)
     """
     Test endpoint to retrieve products from WooCommerce.
     

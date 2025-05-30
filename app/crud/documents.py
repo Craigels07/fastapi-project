@@ -14,15 +14,10 @@ from dotenv import load_dotenv
 import os
 from typing import List
 from app.schemas.document import SearchResponse
-import logging
-
 
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 DATABASE_URL = os.getenv("DATABASE_URL")
-
-logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
 
 
 async def process_and_store_document(db, file, file_path):
@@ -118,8 +113,5 @@ def search_documents(db: Session, query: str, limit: int = 5) -> List[SearchResp
                 similarity=result.metadata.get("similarity", 1.0),
             )
         )
-
-    for i, result in enumerate(results):
-        logger.info(f"Result {i + 1}: {result.page_content[:300]}")
 
     return responses

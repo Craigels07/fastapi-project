@@ -62,14 +62,15 @@ def check_organization_access(org_id: int, current_user: User = Depends(get_curr
     Check if the current user has access to the specified organization
     
     Authorization rules:
-    - Admin users can access any organization
-    - Regular users can only access their own organization
+    - super_admin users can access any organization
+    - org_admin users can access only their organization
+    - regular users can only access their own organization
     """
-    # Admin can access any organization
-    if current_user.role == "admin":
+    # Super admin can access any organization
+    if current_user.role == "super_admin":
         return True
         
-    # Users can only access their own organization
+    # Org admins and regular users can only access their own organization
     if current_user.organization_id != org_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -82,9 +83,14 @@ def has_role(required_roles: list):
     Dependency for role-based access control
     
     Usage:
-    @router.get("/admin-only", dependencies=[Depends(has_role(["admin"]))])
+    @router.get("/admin-only", dependencies=[Depends(has_role(["super_admin", "org_admin"]))])
     def admin_endpoint():
         ...
+    
+    Roles hierarchy:
+    - super_admin: System-wide administrator, can manage all organizations and users
+    - org_admin: Organization administrator, can manage users within their organization
+    - user: Regular user with basic access to their organization's resources
     """
     def role_checker(current_user: User = Depends(get_current_user)):
         if current_user.role not in required_roles:

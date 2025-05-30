@@ -53,9 +53,10 @@ async def create_new_organization(
 async def get_organization_by_id(
     organization_id: int, 
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-    _: bool = Depends(lambda org_id=organization_id: check_organization_access(org_id))
-):
+    current_user: User = Depends(get_current_active_user)
+):  
+    # Check organization access directly
+    check_organization_access(organization_id, current_user)
     """
     Get an organization by ID
     
@@ -104,9 +105,10 @@ async def update_organization_endpoint(
     organization_id: int, 
     organization_data: Dict[str, Any] = Body(...), 
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-    _: bool = Depends(lambda org_id=organization_id: check_organization_access(org_id))
+    current_user: User = Depends(get_current_active_user)
 ):
+    # Check organization access directly
+    check_organization_access(organization_id, current_user)
     """
     Update an organization
     
@@ -139,9 +141,10 @@ async def add_woocommerce_to_organization(
     organization_id: int,
     credentials: WooCommerceCredentials,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-    _: bool = Depends(lambda org_id=organization_id: check_organization_access(org_id))
+    current_user: User = Depends(get_current_active_user)
 ):
+    # Check organization access directly
+    check_organization_access(organization_id, current_user)
     """
     Add WooCommerce credentials to an organization
     
@@ -165,9 +168,10 @@ async def add_woocommerce_to_organization(
 async def get_organization_services(
     organization_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-    _: bool = Depends(lambda org_id=organization_id: check_organization_access(org_id))
+    current_user: User = Depends(get_current_active_user)
 ):
+    # Check organization access directly
+    check_organization_access(organization_id, current_user)
     """
     Get available services for an organization
     
