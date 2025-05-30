@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Body, status
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any
 from pydantic import BaseModel
+from uuid import UUID
 
 from app.database import get_db
 from app.models.user import Organization, User
@@ -39,7 +40,7 @@ class WooCommerceCredentials(BaseModel):
 async def create_new_organization(
     organization: OrganizationCreate, 
     db: Session = Depends(get_db),
-    current_user: User = Depends(has_role(["admin"]))
+    current_user: User = Depends(has_role(["admin", "super_admin"]))
 ):
     """
     Create a new organization
@@ -51,7 +52,7 @@ async def create_new_organization(
 
 @router.get("/{organization_id}", response_model=OrganizationSchema)
 async def get_organization_by_id(
-    organization_id: int, 
+    organization_id: UUID, 
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):  
@@ -72,7 +73,7 @@ async def get_organization_by_id(
 async def get_organization_by_phone_number(
     phone_number: str, 
     db: Session = Depends(get_db),
-    current_user: User = Depends(has_role(["admin"]))
+    current_user: User = Depends(has_role(["admin", "super_admin"]))
 ):
     """
     Get an organization by phone number
@@ -90,7 +91,7 @@ async def list_organizations(
     skip: int = 0, 
     limit: int = 100, 
     db: Session = Depends(get_db),
-    current_user: User = Depends(has_role(["admin"]))
+    current_user: User = Depends(has_role(["admin", "super_admin"]))
 ):
     """
     Get a list of all organizations with pagination
@@ -102,7 +103,7 @@ async def list_organizations(
 
 @router.put("/{organization_id}", response_model=OrganizationSchema)
 async def update_organization_endpoint(
-    organization_id: int, 
+    organization_id: UUID, 
     organization_data: Dict[str, Any] = Body(...), 
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
@@ -122,9 +123,9 @@ async def update_organization_endpoint(
 
 @router.delete("/{organization_id}")
 async def delete_organization_endpoint(
-    organization_id: int, 
+    organization_id: UUID, 
     db: Session = Depends(get_db),
-    current_user: User = Depends(has_role(["admin"]))
+    current_user: User = Depends(has_role(["admin", "super_admin"]))
 ):
     """
     Delete an organization
@@ -138,7 +139,7 @@ async def delete_organization_endpoint(
 
 @router.post("/{organization_id}/woocommerce", response_model=OrganizationSchema)
 async def add_woocommerce_to_organization(
-    organization_id: int,
+    organization_id: UUID,
     credentials: WooCommerceCredentials,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
@@ -166,7 +167,7 @@ async def add_woocommerce_to_organization(
 
 @router.get("/{organization_id}/services", response_model=Dict[str, bool])
 async def get_organization_services(
-    organization_id: int,
+    organization_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
