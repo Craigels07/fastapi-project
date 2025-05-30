@@ -6,8 +6,55 @@ from app.models.user import User
 from app.schemas.user import UserCreate, UserResponse, UserUpdate
 from app.crud.user import create_user, get_user, get_users, update_user, delete_user
 from app.auth.dependencies import get_current_active_user
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+
+class InitialSetupRequest(BaseModel):
+    """Schema for initial system setup"""
+    admin_email: str
+    admin_password: str
+    admin_name: str
+    organization_name: str
+
+
+@router.post("/bootstrap", response_model=UserResponse)
+def bootstrap_system(setup_data: InitialSetupRequest, db: Session = Depends(get_db)):
+    """Bootstrap the system with the first organization and super_admin user
+    
+    This endpoint only works when the database is empty - it creates the first
+    organization and super_admin user. Once users exist, this endpoint is disabled.
+    """
+    # Check if users already exist
+    existing_users = db.query(User).count()
+    if existing_users > 0:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Bootstrap disabled. System already initialized with users."
+        )
+    
+    # Import here to avoid circular imports
+    from app.models.user import Organization
+    from app.crud.organization import create_organization
+    from app.schemas.organization import OrganizationCreate
+    
+    # Create the first organization
+    org_data = OrganizationCreate(name=setup_data.organization_name)
+    new_org = create_organization(db, org_data)
+    
+    # Create the super_admin user
+    user_data = UserCreate(
+        email=setup_data.admin_email,
+        password=setup_data.admin_password,
+        name=setup_data.admin_name,
+        role="super_admin",
+        organization_id=new_org.id
+        # No need to specify code - it will be auto-generated
+    )
+    
+    new_user = create_user(db, user_data)
+    return new_user
 
 
 @router.post("/", response_model=UserResponse)
