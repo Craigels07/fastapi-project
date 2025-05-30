@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Union
 from fastapi import APIRouter, Depends
 from app.database import get_db
 from app.models.user import User
@@ -10,6 +10,11 @@ from app.schemas.user import (
     OrganizationRead,
 )
 from app.models.user import Organization
+from uuid import UUID
+from passlib.context import CryptContext
+
+# Password handling
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 router = APIRouter()
 
@@ -32,9 +37,14 @@ def create_organization(
 
 
 def create_user(db: Session, user: UserCreate) -> User:
+    # Hash the password
+    hashed_password = pwd_context.hash(user.password)
+    
+    # Create new user with all fields including password
     new_user = User(
         name=user.name,
         email=user.email,
+        password=hashed_password,  # Set the hashed password
         phone_number=user.phone_number,
         organization_id=user.organization_id,
         role=user.role,
@@ -47,15 +57,22 @@ def create_user(db: Session, user: UserCreate) -> User:
     return new_user
 
 
-def get_user(db: Session, user_id: int) -> Optional[User]:
+def get_user(db: Session, user_id: Union[UUID, str]) -> Optional[User]:
     return db.query(User).filter(User.id == user_id).first()
+
+
+def get_user_by_email(db: Session, email: str) -> Optional[User]:
+    """
+    Get a user by email address
+    """
+    return db.query(User).filter(User.email == email).first()
 
 
 def get_users(db: Session, skip: int = 0, limit: int = 100) -> List[User]:
     return db.query(User).offset(skip).limit(limit).all()
 
 
-def update_user(db: Session, user_id: int, user: UserUpdate) -> Optional[User]:
+def update_user(db: Session, user_id: Union[UUID, str], user: UserUpdate) -> Optional[User]:
     db_user = get_user(db, user_id)
     if db_user:
         update_data = user.dict(exclude_unset=True)
@@ -66,7 +83,7 @@ def update_user(db: Session, user_id: int, user: UserUpdate) -> Optional[User]:
     return db_user
 
 
-def delete_user(db: Session, user_id: int) -> bool:
+def delete_user(db: Session, user_id: Union[UUID, str]) -> bool:
     db_user = get_user(db, user_id)
     if db_user:
         db.delete(db_user)

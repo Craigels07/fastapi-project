@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from typing import Any, Dict
 from pydantic import BaseModel
 from datetime import timedelta
+from uuid import UUID
 
 from app.database import get_db
 from app.auth.utils import authenticate_user
@@ -15,9 +16,10 @@ router = APIRouter(prefix="/auth", tags=["authentication"])
 class Token(BaseModel):
     access_token: str
     token_type: str
-    user_id: int
+    user_id: UUID
     email: str
     role: str
+    code: str = None
 
 class TokenData(BaseModel):
     email: str
@@ -51,7 +53,8 @@ async def login_for_access_token(
         "token_type": "bearer",
         "user_id": user.id,
         "email": user.email,
-        "role": user.role
+        "role": user.role,
+        "code": user.code
     }
 
 @router.get("/me", response_model=Dict[str, Any])

@@ -1,58 +1,98 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional, Dict, Any
 from app.database import get_db
 from app.models.user import User
 from app.schemas.user import UserCreate, UserResponse, UserUpdate
 from app.crud.user import create_user, get_user, get_users, update_user, delete_user
 from app.auth.dependencies import get_current_active_user
 from pydantic import BaseModel
+from typing import Optional
 
 router = APIRouter(prefix="/users", tags=["users"])
 
 
 class InitialSetupRequest(BaseModel):
     """Schema for initial system setup"""
+    # Organization details
+    organization_name: str
+    organization_email: Optional[str] = None
+    organization_phone: Optional[str] = None
+    woo_commerce_enabled: bool = False
+    woo_commerce_url: Optional[str] = None
+    woo_commerce_key: Optional[str] = None
+    woo_commerce_secret: Optional[str] = None
+    
+    # Admin user details
     admin_email: str
     admin_password: str
     admin_name: str
-    organization_name: str
+    admin_phone: Optional[str] = None
 
 
 @router.post("/bootstrap", response_model=UserResponse)
 def bootstrap_system(setup_data: InitialSetupRequest, db: Session = Depends(get_db)):
     """Bootstrap the system with the first organization and super_admin user
     
-    This endpoint only works when the database is empty - it creates the first
-    organization and super_admin user. Once users exist, this endpoint is disabled.
+    This endpoint creates the first organization and super_admin user if they don't exist.
     """
-    # Check if users already exist
-    existing_users = db.query(User).count()
-    if existing_users > 0:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Bootstrap disabled. System already initialized with users."
-        )
-    
     # Import here to avoid circular imports
     from app.models.user import Organization
-    from app.crud.organization import create_organization
+    from app.crud.organization import create_organization, get_organization_by_email
     from app.schemas.organization import OrganizationCreate
     
-    # Create the first organization
-    org_data = OrganizationCreate(name=setup_data.organization_name)
-    new_org = create_organization(db, org_data)
+    # Check if an organization with the same email already exists
+    existing_org = None
+    if setup_data.organization_email:
+        existing_org = get_organization_by_email(db, setup_data.organization_email)
     
-    # Create the super_admin user
+    # If organization exists, use it, otherwise create a new one
+    if existing_org:
+        new_org = existing_org
+    else:
+        # Create the first organization with enhanced details
+        org_metadata = {}
+        
+        # Add WooCommerce settings to metadata if enabled
+        if setup_data.woo_commerce_enabled:
+            org_metadata["woo_commerce"] = {
+                "url": setup_data.woo_commerce_url,
+                "key": setup_data.woo_commerce_key,
+                "secret": setup_data.woo_commerce_secret
+            }
+        
+        # Create organization with all provided details
+        org_data = OrganizationCreate(
+            name=setup_data.organization_name,
+            email=setup_data.organization_email,
+            phone_number=setup_data.organization_phone,
+            organization_metadata=org_metadata if org_metadata else None,
+            woo_commerce=setup_data.woo_commerce_enabled
+        )
+        
+        # Create organization in database
+        new_org = create_organization(db, org_data)
+    
+    # Check if user with this email already exists
+    from app.crud.user import get_user_by_email, create_user
+    existing_user = get_user_by_email(db, setup_data.admin_email)
+    
+    if existing_user:
+        return existing_user
+    
+    # Create the super_admin user with all provided details
     user_data = UserCreate(
         email=setup_data.admin_email,
         password=setup_data.admin_password,
         name=setup_data.admin_name,
+        phone_number=setup_data.admin_phone,
         role="super_admin",
-        organization_id=new_org.id
+        organization_id=new_org.id,
+        status="active",
         # No need to specify code - it will be auto-generated
     )
     
+    # Create user in database
     new_user = create_user(db, user_data)
     return new_user
 

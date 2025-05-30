@@ -5,7 +5,8 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.user import User
-from typing import Optional
+from typing import Optional, Union
+from uuid import UUID
 import os
 from dotenv import load_dotenv
 
@@ -57,7 +58,7 @@ def get_current_active_user(current_user: User = Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="Inactive user")
     return current_user
 
-def check_organization_access(org_id: int, current_user: User = Depends(get_current_user)):
+def check_organization_access(org_id: Union[UUID, str], current_user: User = Depends(get_current_user)):
     """
     Check if the current user has access to the specified organization
     
