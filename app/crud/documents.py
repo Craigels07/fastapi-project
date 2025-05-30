@@ -73,7 +73,7 @@ async def process_and_store_document(db, file, file_path):
                     "filename": file.filename,
                     "collection": collection.name,
                     "collection_id": collection.id,
-                    "preview": text_content[:300],
+                    "preview": chunk.page_content[:300],
                     "source": "upload",
                 },
             )

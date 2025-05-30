@@ -13,6 +13,10 @@ python-dotenv
 
 python-multipart
 
+# Authentication
+python-jose[cryptography]
+passlib[bcrypt]
+
 # RAG
 llama-index
 
