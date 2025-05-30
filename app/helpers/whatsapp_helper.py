@@ -16,9 +16,11 @@ from datetime import datetime
 from app.database import get_db
 from sqlalchemy.orm import Session
 from app.agent.models import WhatsAppMessageState
-from models.whatsapp import WhatsAppUser, WhatsAppMessage
+from app.models.whatsapp import WhatsAppUser, WhatsAppMessage
 from langchain.output_parsers import StructuredOutputParser, ResponseSchema
 import json
+from app.models.user import Organization
+from app.service.base import ServiceRegistry
 
 load_dotenv()
 
@@ -139,32 +141,22 @@ def log_internal_notes():
 async def receive_message(state: WhatsAppMessageState) -> dict:
     received_message = state.get("received_message")
     user_phone_number = state.get("user_phone_number")
+    timestamp = datetime.now().isoformat()
 
-    # Open a DB session
-    db: Session = get_db()
+    db_generator = get_db()
+    db: Session = next(db_generator)
 
     try:
-        # Find or create the WhatsAppUser by phone
+        print(f"user_phone_number: {user_phone_number}")
         user = db.query(WhatsAppUser).filter_by(phone_number=user_phone_number).first()
 
         if not user:
-            user = WhatsAppUser(phone_number=user_phone_number)
-            db.add(user)
-            db.commit()
+            raise ValueError(f"User with number: {user_phone_number}, not found.")
 
-        # Create a new WhatsAppMessage entry
-        message = WhatsAppMessage(
-            user_id=user.id,
-            direction="inbound",
-            content=received_message,
-            timestamp=datetime.utcnow().isoformat(),
-            message_metadata=None,
-        )
-        db.add(message)
-        db.commit()
+        user_id = user.id
 
     except Exception as e:
-        print(f"Error saving WhatsApp message: {e}")
+        print(f"Error retrieving WhatsApp message: {e}")
         db.rollback()
 
     finally:
@@ -174,8 +166,8 @@ async def receive_message(state: WhatsAppMessageState) -> dict:
     return {
         **state,
         "received_message": received_message,
-        "user_id": user.id,
-        "timestamp": datetime.utcnow().isoformat(),
+        "user_id": user_id,
+        "timestamp": timestamp,
     }
 
 
@@ -221,7 +213,7 @@ async def parse_intent(state: WhatsAppMessageState, config: Dict[str, Any]) -> d
     return {**state, "messagePurpose": messagePurpose, "messageDetails": messageDetails}
 
 
-def retrieve_conversation_context(state: WhatsAppMessageState) -> dict:
+def retrieve_conversation_context(state: WhatsAppMessageState, config: Dict[str, Any]) -> dict:
     """
     Retrieve recent conversation history for the user to add context.
 
@@ -233,35 +225,52 @@ def retrieve_conversation_context(state: WhatsAppMessageState) -> dict:
     """
 
     user_id = state.get("user_id")
-    if not user_id:
+    organization_id = config["configurable"]["organization_id"]
+    print(f"User ID: {user_id}, Organization ID: {organization_id}")
+    if not all([user_id, organization_id]):
         # No user, no context
+        print("No user or organization found.")
         return {**state, "conversation_context": []}
 
-    db: Session = get_db()
+    db_generator = get_db()
+    db: Session = next(db_generator)
 
-    # Query last 20 messages from the user, ordered newest first
-    recent_msgs = (
-        db.query(WhatsAppMessage)
-        .filter(WhatsAppMessage.user_id == user_id)
-        .order_by(WhatsAppMessage.timestamp.desc())
-        .limit(20)
-        .all()
-    )
+    try:
+        # Query last 20 messages from the user, ordered newest first
+        recent_msgs = (
+            db.query(WhatsAppMessage)
+            .filter(
+                WhatsAppMessage.user_id == user_id,
+            )
+            .order_by(WhatsAppMessage.timestamp.desc())
+            .limit(20)
+            .all()
+        )
+        print(f"Recent messages: {recent_msgs}")
 
-    # Format messages as strings or dicts for context
-    # Example: [{'role': 'user', 'content': 'Hi'}, {'role': 'agent', 'content': 'Hello!'}]
-    context = []
-    for msg in reversed(recent_msgs):  # reverse to chronological order
-        role = "user" if msg.direction == "inbound" else "agent"
-        context.append({"role": role, "content": msg.content})
+        # Format messages as strings or dicts for context
+        # Example: [{'role': 'user', 'content': 'Hi'}, {'role': 'agent', 'content': 'Hello!'}]
+        context = []
+        for msg in reversed(recent_msgs):  # reverse to chronological order
+            role = "user" if msg.direction == "inbound" else "agent"
+            context.append({"role": role, "content": msg.content})
 
-    # Optionally add co ntext from LangChain Memory or RAG retrieval here
-    # e.g., context.extend(rag_vectorstore.retrieve_relevant_docs(user_id))
+        # Optionally add co ntext from LangChain Memory or RAG retrieval here
+        # e.g., context.extend(rag_vectorstore.retrieve_relevant_docs(user_id))
 
-    return {**state, "conversation_context": context}
+        return {**state, "conversation_context": context}
+
+    except Exception as e:
+        print(f"Error retrieving conversation context: {e}")
+        return {**state, "conversation_context": []}
+
+    finally:
+        db.close()
 
 
-async def run_agent_reasoning(state: WhatsAppMessageState) -> dict:
+async def run_agent_reasoning(
+    state: WhatsAppMessageState, config: Dict[str, Any]
+) -> dict:
     """
     Reasoning node that:
     - Examines messagePurpose & messageDetails
@@ -278,69 +287,130 @@ async def run_agent_reasoning(state: WhatsAppMessageState) -> dict:
     Returns:
         dict: Updated state with "agent_response" key containing reply text.
     """
+    print("Running agent reasoning...")
     messagePurpose = state.get("messagePurpose")
     messageDetails = state.get("messageDetails", {})
     context = state.get("conversation_context", [])
     user_phone_number = state.get("user_phone_number")
+    organization_id = state.get("organization_id")
+    received_message = state.get("received_message", "")
 
     model = config["configurable"]["model"]
 
     # Compose system prompt with instructions
     system_prompt = (
         "You are a helpful WhatsApp customer support assistant. "
-        "Based on the conversation and user's messagePurpose, decide how to respond. "
-        "If the user requests order info, check if you have a tool (e.g. order info API) "
-        "If unclear, ask for clarification politely."
+        "Based on the conversation and user's message purpose, decide how to respond. "
+        "If the user requests order information, use the available tools to fetch it. "
+        "Be concise, friendly, and helpful in your responses."
     )
 
-    organization = (
-        db.query(Organization).filter_by(phone_number=user_phone_number).first()
-    )
-
-    # Build conversation history for the model (system + past messages + user message)
+    # Build conversation history for the model
     messages = [SystemMessage(content=system_prompt)]
-    for msg in context:
-        role = msg.get("role")
-        content = msg.get("content")
-        if role == "user":
-            messages.append(HumanMessage(content=content))
-        else:
-            # Agent message
-            messages.append(SystemMessage(content=content))
 
-    # Add current user message for clarity
-    if state.get("received_message"):
-        messages.append(HumanMessage(content=state["received_message"]))
+    # Add conversation context if available
+    if isinstance(context, list):
+        for msg in context:
+            role = msg.get("role")
+            content = msg.get("content")
+            if role == "user":
+                messages.append(HumanMessage(content=content))
+            else:
+                # Agent message
+                messages.append(SystemMessage(content=content))
 
-    # Example tool call simulation
+    # Add current user message
+    messages.append(HumanMessage(content=received_message))
+
     response_text = ""
+    tool_output = None
 
-    woo_service = WooService(organization=organization)
+    try:
+        # Open a database session
+        db_generator = get_db()
+        db: Session = next(db_generator)
 
-    if messagePurpose == "order_query" and "order_id" in messageDetails:
-        order_id = messageDetails["order_id"]
-        woo_service.get_order_by_id(order_id)
+        # Try to find the organization associated with the phone number
+        organization = (
+            db.query(Organization)
+            .filter_by(phone_number=user_phone_number, id=organization_id)
+            .first()
+        )
 
-    elif messagePurpose == "order_query" and not "order_id" in messageDetails:
-        order_id = messageDetails["order_id"]
-        woo_service.get_order_info(order_id)
+        # Get the list of available services for this organization
+        organization_services = []
+        
+        if organization:
+            print("Fetching organization services...")
+            # In a real implementation, you would fetch the organization's active services from the database
+            # This is a simplified example - you would replace this with your actual database query
+            # For now, if we have a WooCommerce client, we'll add it to available services
+            if organization.woo_commerce:
+                woo_client = config["configurable"].get("woo_client")
+                print("Adding WooCommerce service to available services")
+                organization_services.append({
+                    'service_type': 'woocommerce',
+                    'client': woo_client,
+                    'organization_id': organization.id
+                })
+            print(f"Available services for organization {organization.id}: {organization_services}")
+            
+            # You would add other services here as they become available
+            # Example:
+            # if octive_client:
+            #     organization_services.append({
+            #         'service_type': 'octive',
+            #         'client': octive_client,
+            #         'organization_id': organization.id
+            #     })
+        
+        # Find a service that can handle this message purpose
+        service = ServiceRegistry.find_capable_service(
+            organization_services=organization_services,
+            message_purpose=messagePurpose,
+            message_details=messageDetails
+        )
+        
+        # If we found a capable service, let it process the request
+        if service:
+            result = service.process_request(messagePurpose, messageDetails)
+            response_text = result.get('response_text', '')
+            tool_output = result.get('tool_output')
+        # Fall back to generic responses if no service can handle it
+        elif messagePurpose == "order_query":
+            response_text = "It looks like you're asking about an order, but I don't have access to your order information right now."
+        elif messagePurpose == "get_product_info":
+            response_text = "I'd like to help you find product information, but I don't have access to your product catalog right now."
 
-    elif messagePurpose == "get_product_names" and "product_name" in messageDetails:
-        product_description = messageDetails["product_description"]
-        order_info = woo_service.get_product_names(product_description)
+        # elif messagePurpose == "greeting":
+        #     response_text = (
+        #         "Hello! How can I help you today with your order or product inquiries?"
+        #     )
 
-        response_text = f"I found your order info: {order_info}"
-    elif messagePurpose == "greeting":
-        response_text = "Hello! How can I help you today?"
-    elif messagePurpose == "complaint":
-        response_text = "I'm sorry to hear that. Can you please provide more details?"
-    else:
-        # Use model to generate a fallback response
-        completion = await model.agenerate([messages])
-        response_text = completion.generations[0][0].text.strip()
+        # elif messagePurpose == "complaint":
+        #     response_text = "I'm sorry to hear you're having an issue. Could you please provide more details about what happened so I can help resolve it?"
 
-    # Return updated state with the final response for WhatsApp
-    return {**state, "agent_response": response_text}
+        # elif messagePurpose == "farewell":
+        #     response_text = "Thank you for contacting us! If you have any more questions, feel free to message again. Have a great day!"
+
+        else:
+            # Use model to generate a fallback response when we can't categorize the message
+            print("Generating fallback response...")
+            completion = await model.agenerate([messages])
+            response_text = completion.generations[0][0].text.strip()
+
+    except Exception as e:
+        # Log the error and return a generic error message
+        print(f"Error in run_agent_reasoning: {str(e)}")
+        response_text = "I'm sorry, but I encountered an error while processing your request. Please try again later."
+
+    finally:
+        # Always close the database connection
+        if "db" in locals():
+            db.close()
+
+    # Return updated state with the response and any tool output
+    return {**state, "agent_response": response_text, "tool_output": tool_output}
 
 
 def generate_response(state: WhatsAppMessageState) -> dict:
@@ -374,13 +444,13 @@ def generate_response(state: WhatsAppMessageState) -> dict:
             # Otherwise just append as string
             message += f"\n\n{tool_output}"
 
-    # Optionally add a friendly closing line
-    message += "\n\nIf you have more questions, just reply here!"
+    # # Optionally add a friendly closing line
+    # message += "\n\nIf you have more questions, just reply here!"
 
     return {**state, "final_message": message}
 
 
-def send_whatsapp_message(state: WhatsAppMessageState):
+def send_whatsapp_message(state: WhatsAppMessageState, config: Dict[str, Any]):
     """
     Send a WhatsApp message using Twilio.
 
@@ -400,22 +470,30 @@ def send_whatsapp_message(state: WhatsAppMessageState):
     """
     final_message = state.get("final_message")
     user_phone_number = state.get("user_phone_number")
-    entity_phone_number = state.get("phone_number")
+    organization_phone_number = config["configurable"].get("organization_phone_number")
+    print(f"final_message: {final_message}")
+    print(f"user_phone_number: {user_phone_number}")
+    print(f"organization_phone_number: {organization_phone_number}")
+
+    if not all([final_message, user_phone_number, organization_phone_number]):
+        raise ValueError(
+            "Missing one or more required fields in state: 'final_message', 'user_phone_number', or 'organization_phone_number'."
+        )
 
     message = client.messages.create(
         body=final_message,
-        from_=f"whatsapp:{entity_phone_number}",
-        to=f"whatsapp:{user_phone_number}",
+        from_=f"whatsapp:{organization_phone_number}",
+        to=f"{user_phone_number}"
+        if user_phone_number.startswith("whatsapp:")
+        else f"whatsapp:{user_phone_number}",
     )
 
-    print(message.body)
-    return message
+    return {"message_sid": message.sid, "status": message.status}
 
 
 def get_tools():
     """Get the tools available to the agent."""
     return [search_documents, log_internal_notes, escalate_to_human]
-
 
 def model_with_tools():
     """

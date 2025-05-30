@@ -7,8 +7,38 @@ class UserBase(BaseModel):
     email: EmailStr
 
 
-class UserCreate(UserBase):
-    pass
+class OrganizationCreate(BaseModel):
+    name: str
+    email: str
+    phone_number: str
+    organization_metadata: str | None = None
+    woo_commerce: bool = False
+
+
+class OrganizationRead(OrganizationCreate):
+    id: int
+
+    class Config:
+        orm_mode = True
+
+
+class Organization(BaseModel):
+    id: int
+    name: str
+    email: str
+    phone_number: str
+    organization_metadata: str | None = None
+    woo_commerce: bool
+
+
+class UserCreate(BaseModel):
+    name: str
+    email: str
+    phone_number: str
+    organization_id: int
+    role: str
+    status: str
+    user_metadata: str | None = None
 
 
 class UserUpdate(BaseModel):
