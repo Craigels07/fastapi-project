@@ -120,8 +120,16 @@ class WooService(ServiceInterface):
     def get_products(self, **params):
         return self._request("GET", "products", params=params)
 
-    def get_order_by_id(self, order_id: int):
-        return self._request("GET", f"orders/{order_id}")
+    def get_order_by_id(self, order_id):
+        # Convert order_id to integer if it's a string containing only digits
+        if isinstance(order_id, str) and order_id.isdigit():
+            order_id = int(order_id)
+        # Use try-except to handle potential API errors
+        try:
+            return self._request("GET", f"orders/{order_id}")
+        except Exception as e:
+            print(f"Error fetching order {order_id}: {e}")
+            return None
 
     def get_product_by_id(self, product_id: int):
         return self._request("GET", f"products/{product_id}")
@@ -182,25 +190,105 @@ class WooService(ServiceInterface):
         }
 
     def _handle_order_query(self, message_details: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle order query request"""
+        """Handle order query request with security validation"""
         order_id = message_details.get("order_id")
+        user_phone_number = message_details.get("user_phone_number")
+        
         if not order_id:
             return {
                 "response_text": "It looks like you're asking about an order, but I couldn't identify the order number. Could you please provide the order ID?",
                 "tool_output": None,
             }
 
-        order_info = self.get_order_by_id(order_id)
-        if order_info:
+        print(f"Attempting to fetch order with ID: {order_id} (type: {type(order_id)})")
+        
+        try:
+            order_info = self.get_order_by_id(order_id)
+            if not order_info:
+                return {
+                    "response_text": f"I couldn't find an order with ID #{order_id}. Could you please check the order number and try again?",
+                    "tool_output": None,
+                }
+            
+            # Security check: Verify user has permission to view this order
+            if not self._verify_order_access(order_info, user_phone_number):
+                # Don't reveal that the order exists but the user doesn't have access
+                return {
+                    "response_text": f"I'm sorry, I couldn't find an order with ID #{order_id} associated with your phone number. If you believe this is an error, please contact customer support.",
+                    "tool_output": None,
+                }
+                
+            # Format a nice response with key order details
+            order_status = order_info.get('status', 'unknown')
+            order_date = order_info.get('date_created', 'unknown')
+            order_total = order_info.get('total', 'unknown')
+            
+            response_text = f"I found information for order #{order_id}. \n\n" \
+                          f"Status: {order_status}\n" \
+                          f"Date: {order_date}\n" \
+                          f"Total: {order_total}"
+            
             return {
-                "response_text": f"I found information for order #{order_id}. Here are the details:",
+                "response_text": response_text,
                 "tool_output": order_info,
             }
-        else:
+        except Exception as e:
+            print(f"Error in _handle_order_query: {e}")
             return {
-                "response_text": f"I couldn't find an order with ID #{order_id}. Could you please check the order number and try again?",
+                "response_text": f"I'm having trouble retrieving information for order #{order_id}. Please try again later.",
                 "tool_output": None,
             }
+            
+    def _verify_order_access(self, order_info: Dict[str, Any], user_phone_number: str) -> bool:
+        """Verify that the user has permission to access this order
+        
+        Args:
+            order_info: The order information from WooCommerce
+            user_phone_number: The phone number of the user making the request
+            
+        Returns:
+            bool: True if the user has permission to access this order, False otherwise
+        """
+        if not user_phone_number:
+            print("Security warning: No user phone number provided for order verification")
+            return False
+            
+        # Clean up the phone number for comparison
+        # Remove any 'whatsapp:' prefix if present
+        if user_phone_number.startswith('whatsapp:'):
+            user_phone_number = user_phone_number[9:]
+            
+        # Normalize phone number by removing non-digit characters
+        user_phone_number = ''.join(filter(str.isdigit, user_phone_number))
+        
+        # Check if the user's phone number matches billing or shipping phone
+        billing_phone = order_info.get('billing', {}).get('phone', '')
+        shipping_phone = order_info.get('shipping', {}).get('phone', '')
+        
+        # Normalize order phone numbers
+        billing_phone = ''.join(filter(str.isdigit, billing_phone))
+        shipping_phone = ''.join(filter(str.isdigit, shipping_phone))
+        
+        # Try to match the last digits if the numbers are different lengths
+        # This helps with country code differences (e.g., +27 vs 0)
+        min_match_length = 9  # Match at least the last 9 digits
+        
+        # Check full match first
+        if user_phone_number == billing_phone or user_phone_number == shipping_phone:
+            return True
+            
+        # Check last digits
+        if (len(user_phone_number) >= min_match_length and len(billing_phone) >= min_match_length and 
+            user_phone_number[-min_match_length:] == billing_phone[-min_match_length:]):
+            return True
+            
+        if (len(user_phone_number) >= min_match_length and len(shipping_phone) >= min_match_length and 
+            user_phone_number[-min_match_length:] == shipping_phone[-min_match_length:]):
+            return True
+            
+        # If none of the above conditions match, the user doesn't have permission
+        print(f"Security warning: Unauthorized access attempt to order. User phone: {user_phone_number}, Order phones: {billing_phone}/{shipping_phone}")
+        return False
 
     def _handle_product_info(self, message_details: Dict[str, Any]) -> Dict[str, Any]:
         """Handle product info request"""
