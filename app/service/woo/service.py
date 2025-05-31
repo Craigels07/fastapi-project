@@ -261,6 +261,12 @@ class WooService(ServiceInterface):
         # Normalize phone number by removing non-digit characters
         user_phone_number = ''.join(filter(str.isdigit, user_phone_number))
         
+        # Check if this is an admin number with override access
+        admin_override = self._check_admin_override(user_phone_number)
+        if admin_override:
+            print(f"Admin override granted for phone: {user_phone_number}")
+            return True
+        
         # Check if the user's phone number matches billing or shipping phone
         billing_phone = order_info.get('billing', {}).get('phone', '')
         shipping_phone = order_info.get('shipping', {}).get('phone', '')
@@ -289,6 +295,63 @@ class WooService(ServiceInterface):
         # If none of the above conditions match, the user doesn't have permission
         print(f"Security warning: Unauthorized access attempt to order. User phone: {user_phone_number}, Order phones: {billing_phone}/{shipping_phone}")
         return False
+        
+    def _check_admin_override(self, user_phone_number: str) -> bool:
+        """Check if the phone number has admin override privileges
+        
+        Args:
+            user_phone_number: The normalized phone number (digits only)
+            
+        Returns:
+            bool: True if the phone number has admin override access, False otherwise
+        """
+        try:
+            # First check environment variables for admin numbers
+            import os
+            from dotenv import load_dotenv
+            
+            # Load environment variables if not already loaded
+            load_dotenv()
+            
+            # Get admin phone numbers from environment variables
+            admin_phones_str = os.getenv('ADMIN_PHONE_NUMBERS', '')
+            if admin_phones_str:
+                # Split by commas and normalize each number
+                admin_phones = [phone.strip() for phone in admin_phones_str.split(',')]
+                admin_phones = [''.join(filter(str.isdigit, phone)) for phone in admin_phones]
+                
+                # Check if user's phone is in the admin list
+                if user_phone_number in admin_phones:
+                    return True
+                    
+                # Check last digits for admin phones too
+                min_match_length = 9
+                for admin_phone in admin_phones:
+                    if (len(user_phone_number) >= min_match_length and 
+                        len(admin_phone) >= min_match_length and 
+                        user_phone_number[-min_match_length:] == admin_phone[-min_match_length:]):
+                        return True
+            
+            # Optionally, check database for admin users/numbers
+            # This could be implemented by checking if the phone number belongs to a user
+            # with admin role in your user/organization tables
+            
+            # Example (commented out as actual implementation depends on your DB schema):
+            # from app.database import get_db
+            # from app.models.user import User, UserRole
+            # db = next(get_db())
+            # admin_user = db.query(User).filter(
+            #     User.phone.like(f'%{user_phone_number[-9:]}%'),
+            #     User.role == UserRole.ADMIN
+            # ).first()
+            # if admin_user:
+            #     return True
+            
+            return False
+            
+        except Exception as e:
+            print(f"Error checking admin override: {e}")
+            return False
 
     def _handle_product_info(self, message_details: Dict[str, Any]) -> Dict[str, Any]:
         """Handle product info request"""

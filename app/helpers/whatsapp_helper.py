@@ -567,6 +567,14 @@ def generate_response(state: WhatsAppMessageState) -> dict:
                 payment_method = tool_output.get('payment_method_title', '')
                 if payment_method:
                     order_summary.append(f"Payment: {payment_method}")
+                
+                # Add shipping method if available
+                shipping_method = ""
+                if 'shipping_lines' in tool_output and isinstance(tool_output['shipping_lines'], list) and tool_output['shipping_lines']:
+                    shipping_info = tool_output['shipping_lines'][0]  # Get the first shipping method
+                    shipping_method = shipping_info.get('method_title', '')
+                    if shipping_method:
+                        order_summary.append(f"Shipping: {shipping_method}")
                     
                 # Format items section
                 items_text = ""
