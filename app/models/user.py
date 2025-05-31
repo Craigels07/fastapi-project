@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, ForeignKey, event
+from sqlalchemy import Column, String, ForeignKey, event
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 import uuid
@@ -36,8 +36,10 @@ class Organization(Base):
     email = Column(String, unique=True, index=True, nullable=True)
     phone_number = Column(String, unique=True, index=True, nullable=True)
     organization_metadata = Column(String, nullable=True)
-    woo_commerce = Column(Boolean, default=False)
+    
+    # Relationships
     users = relationship("User", back_populates="organization")
+    service_credentials = relationship("ServiceCredential", back_populates="organization")
 
 
 class User(Base):

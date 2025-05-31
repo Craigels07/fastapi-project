@@ -8,7 +8,6 @@ from app.service.woo.utils import (
     format_order_status,
 )
 from app.service.base import ServiceInterface, ServiceRegistry
-from app.models.user import Organization
 
 
 @ServiceRegistry.register
@@ -17,37 +16,59 @@ class WooService(ServiceInterface):
     _service_type: ClassVar[str] = "woocommerce"
     _capabilities: ClassVar[List[str]] = ["order_query", "get_product_info", "order_status"]
     
-    def __init__(self, client: WooCommerceAPIClient = None, organization_id: str = None, **kwargs):
+    def __init__(self, client: WooCommerceAPIClient = None, organization_id: str = None, credentials: dict = None, **kwargs):
         self.client = client
         self.organization_id = organization_id
-        if client and organization_id:
+        
+        # Initialize with provided credentials if available
+        if credentials:
+            self.woo_url = credentials.get('woo_url')
+            self.consumer_key = credentials.get('consumer_key')
+            self.consumer_secret = credentials.get('consumer_secret')
+        elif client and organization_id:
             try:
+                # Retrieve credentials from service_credentials table
                 self.woo_url, self.consumer_key, self.consumer_secret = (
-                    self.retrieve_organization()
+                    self.retrieve_credentials()
                 )
             except Exception:
                 # Handle initialization errors gracefully
                 self.woo_url = self.consumer_key = self.consumer_secret = None
 
-    def retrieve_organization(self):
-        from app.db.database import get_db
+    def retrieve_credentials(self):
+        from app.database import get_db
         from sqlalchemy.orm import Session
+        from app.models.service_credential import ServiceCredential, ServiceTypeEnum
+        from app.utils.encryption import decrypt_data
+        import json
         
         # Open a database session
         db_generator = get_db()
         db: Session = next(db_generator)
         
         try:
-            # Query using SQLAlchemy
-            organization = db.query(Organization).filter_by(id=self.organization_id).first()
-            if not organization:
-                raise ValueError(f"Organization with ID {self.organization_id} not found")
+            # Query the service credentials
+            credential = db.query(ServiceCredential).filter(
+                ServiceCredential.organization_id == self.organization_id,
+                ServiceCredential.service_type == ServiceTypeEnum.WOOCOMMERCE,
+                ServiceCredential.is_active.is_(True)
+            ).first()
+            
+            if not credential:
+                raise ValueError(f"WooCommerce credentials for organization ID {self.organization_id} not found")
+            
+            # Decrypt the credentials
+            try:
+                decrypted_json = decrypt_data(credential.credentials)
+                credentials = json.loads(decrypted_json)
                 
-            return (
-                organization.woo_url,
-                organization.consumer_key,
-                organization.consumer_secret,
-            )
+                return (
+                    credentials.get('woo_url'),
+                    credentials.get('consumer_key'),
+                    credentials.get('consumer_secret')
+                )
+            except Exception as e:
+                raise ValueError(f"Error decrypting credentials: {str(e)}")
         finally:
             # Close the database session
             db.close()
