@@ -10,6 +10,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from app.models.file import File  # noqa: F401
 from app.models.user import User  # noqa: F401
 from app.models.documents import Document  # noqa: F401
+from app.models.service_credential import ServiceCredential  # noqa: F401
 from app.database import Base
 from alembic import context
 

@@ -1,5 +1,6 @@
 from pydantic import BaseModel, validator
-from typing import Dict, Any, Optional
+from typing import Optional
+from uuid import UUID
 
 
 class WhatsAppMessageBase(BaseModel):
@@ -25,3 +26,7 @@ class WhatsAppMessageBase(BaseModel):
             return int(v)
         except (ValueError, TypeError):
             return 0
+
+
+class WhatsAppUserUpdate(BaseModel):
+    organization_id: UUID

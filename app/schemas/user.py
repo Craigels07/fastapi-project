@@ -1,6 +1,6 @@
-from pydantic import BaseModel, EmailStr, Field
-from typing import Optional, Union
-from uuid import UUID, uuid4
+from pydantic import BaseModel, EmailStr
+from typing import Optional, List
+from uuid import UUID
 
 
 class UserBase(BaseModel):
@@ -31,6 +31,11 @@ class Organization(BaseModel):
     phone_number: Optional[str] = None
     organization_metadata: Optional[str] = None
     woo_commerce: bool
+    users: Optional[List["UserResponse"]] = None
+
+    class Config:
+        orm_mode = True
+        from_attributes = True
 
 
 class UserCreate(BaseModel):

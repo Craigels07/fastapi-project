@@ -6,6 +6,7 @@ from datetime import datetime
 
 class OrganizationBase(BaseModel):
     """Base schema for Organization"""
+
     name: str
     email: Optional[str] = None
     phone_number: Optional[str] = None
@@ -15,11 +16,13 @@ class OrganizationBase(BaseModel):
 
 class OrganizationCreate(OrganizationBase):
     """Schema for creating a new Organization"""
+
     pass
 
 
 class OrganizationUpdate(BaseModel):
     """Schema for updating an Organization"""
+
     name: Optional[str] = None
     email: Optional[str] = None
     phone_number: Optional[str] = None
@@ -29,6 +32,7 @@ class OrganizationUpdate(BaseModel):
 
 class OrganizationInDB(OrganizationBase):
     """Database representation of an Organization"""
+
     id: UUID
     code: str
     created_at: datetime
@@ -40,4 +44,5 @@ class OrganizationInDB(OrganizationBase):
 
 class OrganizationResponse(OrganizationInDB):
     """Response schema for Organization"""
+
     pass

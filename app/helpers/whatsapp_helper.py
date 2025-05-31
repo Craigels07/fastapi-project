@@ -21,6 +21,7 @@ from langchain.output_parsers import StructuredOutputParser, ResponseSchema
 import json
 from app.models.user import Organization
 from app.service.base import ServiceRegistry
+from app.models.service_credential import ServiceCredential
 
 load_dotenv()
 
@@ -213,7 +214,9 @@ async def parse_intent(state: WhatsAppMessageState, config: Dict[str, Any]) -> d
     return {**state, "messagePurpose": messagePurpose, "messageDetails": messageDetails}
 
 
-def retrieve_conversation_context(state: WhatsAppMessageState, config: Dict[str, Any]) -> dict:
+def retrieve_conversation_context(
+    state: WhatsAppMessageState, config: Dict[str, Any]
+) -> dict:
     """
     Retrieve recent conversation history for the user to add context.
 
@@ -292,7 +295,7 @@ async def run_agent_reasoning(
     messageDetails = state.get("messageDetails", {})
     context = state.get("conversation_context", [])
     user_phone_number = state.get("user_phone_number")
-    organization_id = state.get("organization_id")
+    organization_id = config["configurable"]["organization_id"]
     received_message = state.get("received_message", "")
 
     model = config["configurable"]["model"]
@@ -331,51 +334,44 @@ async def run_agent_reasoning(
         db: Session = next(db_generator)
 
         # Try to find the organization associated with the phone number
-        organization = (
-            db.query(Organization)
-            .filter_by(phone_number=user_phone_number, id=organization_id)
-            .first()
+        organization = db.query(Organization).filter_by(id=organization_id).first()
+        print(
+            f"in run_agent_reasoning, organization id= {organization} for organization id {organization_id}"
         )
 
         # Get the list of available services for this organization
         organization_services = []
-        
+
         if organization:
             print("Fetching organization services...")
-            # In a real implementation, you would fetch the organization's active services from the database
-            # This is a simplified example - you would replace this with your actual database query
-            # For now, if we have a WooCommerce client, we'll add it to available services
-            if organization.woo_commerce:
-                woo_client = config["configurable"].get("woo_client")
-                print("Adding WooCommerce service to available services")
-                organization_services.append({
-                    'service_type': 'woocommerce',
-                    'client': woo_client,
-                    'organization_id': organization.id
-                })
-            print(f"Available services for organization {organization.id}: {organization_services}")
-            
-            # You would add other services here as they become available
-            # Example:
-            # if octive_client:
-            #     organization_services.append({
-            #         'service_type': 'octive',
-            #         'client': octive_client,
-            #         'organization_id': organization.id
-            #     })
-        
+
+            try:
+                # Try to query service credentials, but handle case where table doesn't exist
+                organization_services = list(
+                    db.query(ServiceCredential).filter_by(
+                        organization_id=organization_id
+                    )
+                )
+                print(
+                    f"Available services for organization {organization.id}: {organization_services}"
+                )
+            except Exception as e:
+                # Handle case where table doesn't exist or other DB errors
+                print(f"Error fetching service credentials: {e}")
+                organization_services = []
+
         # Find a service that can handle this message purpose
         service = ServiceRegistry.find_capable_service(
             organization_services=organization_services,
             message_purpose=messagePurpose,
-            message_details=messageDetails
+            message_details=messageDetails,
         )
-        
+
         # If we found a capable service, let it process the request
         if service:
             result = service.process_request(messagePurpose, messageDetails)
-            response_text = result.get('response_text', '')
-            tool_output = result.get('tool_output')
+            response_text = result.get("response_text", "")
+            tool_output = result.get("tool_output")
         # Fall back to generic responses if no service can handle it
         elif messagePurpose == "order_query":
             response_text = "It looks like you're asking about an order, but I don't have access to your order information right now."
@@ -429,10 +425,10 @@ def generate_response(state: WhatsAppMessageState) -> dict:
 
     agent_response = state.get("agent_response", "")
     tool_output = state.get("tool_output", None)
-    user_name = state.get("user_name", "there")
+    _user_name = state.get("user_name", "there")
 
     # Start building the message
-    message = f"Hi {user_name},\n\n{agent_response}"
+    message = agent_response  # f"Hi {user_name},\n\n{agent_response}"
 
     # Append tool output if available and meaningful
     if tool_output:
@@ -494,6 +490,7 @@ def send_whatsapp_message(state: WhatsAppMessageState, config: Dict[str, Any]):
 def get_tools():
     """Get the tools available to the agent."""
     return [search_documents, log_internal_notes, escalate_to_human]
+
 
 def model_with_tools():
     """

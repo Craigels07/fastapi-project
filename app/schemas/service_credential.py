@@ -27,7 +27,7 @@ class ServiceCredentialUpdate(BaseModel):
 class ServiceCredentialResponse(ServiceCredentialBase):
     id: UUID
     organization_id: UUID
-    
+
     class Config:
         orm_mode = True
 

@@ -1,5 +1,12 @@
 from fastapi import FastAPI
-from app.routers import documents, user, whatsapp, organization, services, service_credentials
+from app.routers import (
+    documents,
+    user,
+    whatsapp,
+    organization,
+    services,
+    service_credentials,
+)
 from app.auth.router import router as auth_router
 import uvicorn
 from app.service.ngrok.service import start_ngrok_tunnel
@@ -21,6 +28,7 @@ def read_root():
     Root endpoint that provides basic API information.
     """
     return {"name": "Document, Whatsapp, Rag API", "version": "1.0", "status": "active"}
+
 
 app.include_router(auth_router)  # Authentication router should be first
 app.include_router(organization.router)

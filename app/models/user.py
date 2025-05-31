@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, ForeignKey, event
+from sqlalchemy import Column, String, ForeignKey, event, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 import uuid
@@ -11,9 +11,9 @@ def generate_org_code():
     """Generate a human-readable organization code like ORG-XYZ-123"""
     prefix = "ORG"
     # Generate 3 random uppercase letters
-    letters = ''.join(random.choices(string.ascii_uppercase, k=3))
+    letters = "".join(random.choices(string.ascii_uppercase, k=3))
     # Generate 3 random digits
-    digits = ''.join(random.choices(string.digits, k=3))
+    digits = "".join(random.choices(string.digits, k=3))
     return f"{prefix}-{letters}-{digits}"
 
 
@@ -21,9 +21,9 @@ def generate_user_code():
     """Generate a human-readable user code like USR-XYZ-123"""
     prefix = "USR"
     # Generate 3 random uppercase letters
-    letters = ''.join(random.choices(string.ascii_uppercase, k=3))
+    letters = "".join(random.choices(string.ascii_uppercase, k=3))
     # Generate 3 random digits
-    digits = ''.join(random.choices(string.digits, k=3))
+    digits = "".join(random.choices(string.digits, k=3))
     return f"{prefix}-{letters}-{digits}"
 
 
@@ -35,11 +35,14 @@ class Organization(Base):
     name = Column(String, index=True)
     email = Column(String, unique=True, index=True, nullable=True)
     phone_number = Column(String, unique=True, index=True, nullable=True)
+    woo_commerce = Column(Boolean, default=False, nullable=True)
     organization_metadata = Column(String, nullable=True)
-    
+
     # Relationships
     users = relationship("User", back_populates="organization")
-    service_credentials = relationship("ServiceCredential", back_populates="organization")
+    service_credentials = relationship(
+        "ServiceCredential", back_populates="organization"
+    )
 
 
 class User(Base):
@@ -62,13 +65,13 @@ class User(Base):
 
 
 # Event listeners to automatically generate codes
-@event.listens_for(Organization, 'before_insert')
+@event.listens_for(Organization, "before_insert")
 def set_org_code(mapper, connection, target):
     if not target.code:
         target.code = generate_org_code()
 
 
-@event.listens_for(User, 'before_insert')
+@event.listens_for(User, "before_insert")
 def set_user_code(mapper, connection, target):
     if not target.code:
         target.code = generate_user_code()
