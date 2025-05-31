@@ -21,6 +21,7 @@ from langchain.output_parsers import StructuredOutputParser, ResponseSchema
 import json
 from app.models.user import Organization
 from app.service.base import ServiceRegistry
+from app.models.service_credential import ServiceCredential
 
 load_dotenv()
 
@@ -213,7 +214,9 @@ async def parse_intent(state: WhatsAppMessageState, config: Dict[str, Any]) -> d
     return {**state, "messagePurpose": messagePurpose, "messageDetails": messageDetails}
 
 
-def retrieve_conversation_context(state: WhatsAppMessageState, config: Dict[str, Any]) -> dict:
+def retrieve_conversation_context(
+    state: WhatsAppMessageState, config: Dict[str, Any]
+) -> dict:
     """
     Retrieve recent conversation history for the user to add context.
 
@@ -292,7 +295,7 @@ async def run_agent_reasoning(
     messageDetails = state.get("messageDetails", {})
     context = state.get("conversation_context", [])
     user_phone_number = state.get("user_phone_number")
-    organization_id = state.get("organization_id")
+    organization_id = config["configurable"]["organization_id"]
     received_message = state.get("received_message", "")
 
     model = config["configurable"]["model"]
@@ -331,55 +334,152 @@ async def run_agent_reasoning(
         db: Session = next(db_generator)
 
         # Try to find the organization associated with the phone number
-        organization = (
-            db.query(Organization)
-            .filter_by(phone_number=user_phone_number, id=organization_id)
-            .first()
+        organization = db.query(Organization).filter_by(id=organization_id).first()
+        print(
+            f"in run_agent_reasoning, organization id= {organization} for organization id {organization_id}"
         )
 
         # Get the list of available services for this organization
         organization_services = []
-        
+
         if organization:
             print("Fetching organization services...")
-            # In a real implementation, you would fetch the organization's active services from the database
-            # This is a simplified example - you would replace this with your actual database query
-            # For now, if we have a WooCommerce client, we'll add it to available services
-            if organization.woo_commerce:
-                woo_client = config["configurable"].get("woo_client")
-                print("Adding WooCommerce service to available services")
-                organization_services.append({
-                    'service_type': 'woocommerce',
-                    'client': woo_client,
-                    'organization_id': organization.id
-                })
-            print(f"Available services for organization {organization.id}: {organization_services}")
-            
-            # You would add other services here as they become available
-            # Example:
-            # if octive_client:
-            #     organization_services.append({
-            #         'service_type': 'octive',
-            #         'client': octive_client,
-            #         'organization_id': organization.id
-            #     })
+
+            try:
+                # Try to query service credentials, but handle case where table doesn't exist
+                service_credentials = list(db.query(ServiceCredential).filter_by(organization_id=organization_id))
+                # Convert SQLAlchemy models to dictionaries for ServiceRegistry
+                organization_services = []
+                for cred in service_credentials:
+                    # Convert enum to string if it's an enum
+                    service_type = cred.service_type.value if hasattr(cred.service_type, 'value') else str(cred.service_type)
+                    
+                    # Decrypt the credentials
+                    try:
+                        from app.utils.encryption import decrypt_data
+                        import json
+                        
+                        # Decrypt the credentials and parse as JSON
+                        decrypted_json = decrypt_data(cred.credentials)
+                        credentials_dict = json.loads(decrypted_json)
+                    except Exception as e:
+                        print(f"Error decrypting credentials: {e}")
+                        credentials_dict = {}
+                    
+                    # Create dict with required service_type key and other useful attributes
+                    service_dict = {
+                        "service_type": service_type,
+                        "credentials": credentials_dict,  # Use decrypted credentials dictionary
+                        "organization_id": str(cred.organization_id),
+                        "is_active": cred.is_active.lower() == 'true' if isinstance(cred.is_active, str) else bool(cred.is_active),
+                        "id": str(cred.id)
+                    }
+                    organization_services.append(service_dict)
+                print(f"Available services for organization {organization.id}: {organization_services}")
+            except Exception as e:
+                # Handle case where table doesn't exist or other DB errors
+                print(f"Error fetching service credentials: {e}")
+                organization_services = []
+
+        # Print debug information about message details
+        print(f"Message purpose: {messagePurpose}")
+        print(f"Message details: {messageDetails}")
+        
+        # Normalize message details keys to match what services expect
+        normalized_details = {}
+        
+        # Include user phone number from state for security verification
+        if "user_phone_number" in state:
+            normalized_details["user_phone_number"] = state.get("user_phone_number")
+        
+        # Ensure messageDetails is a dictionary
+        if not isinstance(messageDetails, dict):
+            print(f"Warning: messageDetails is not a dictionary. Type: {type(messageDetails)}, Value: {messageDetails}")
+            # Convert to dictionary if possible
+            if isinstance(messageDetails, str):
+                # Check for patterns like "Order ID 41642"
+                import re
+                
+                # For order queries
+                order_id_match = re.search(r'order\s*id\s*(\d+)', messageDetails, re.IGNORECASE)
+                if order_id_match and messagePurpose.lower().replace(" ", "_") == "order_query":
+                    order_id = order_id_match.group(1)
+                    normalized_details["order_id"] = order_id
+                    print(f"Extracted order ID: {order_id} from string message details")
+                else:
+                    # If it's just a string, treat it as general query
+                    normalized_details["query"] = messageDetails
+            else:
+                # Default to empty dictionary if we can't process it
+                if "user_phone_number" not in normalized_details and "user_phone_number" in state:
+                    normalized_details["user_phone_number"] = state.get("user_phone_number")
+        else:
+            # Map specific keys to match service expectations
+            try:
+                if "order ID" in messageDetails:
+                    normalized_details["order_id"] = messageDetails["order ID"]
+                
+                if "product name" in messageDetails:
+                    normalized_details["product_name"] = messageDetails["product name"]
+                    
+                if "product description" in messageDetails:
+                    normalized_details["product_description"] = messageDetails["product description"]
+                    
+                # Add any other keys directly
+                for key, value in messageDetails.items():
+                    if key not in ["order ID", "product name", "product description"]:
+                        normalized_details[key] = value
+            except Exception as e:
+                print(f"Error normalizing message details: {e}")
+                # Provide a simple fallback with the original message details
+                normalized_details = {"original": str(messageDetails)}
+                if "user_phone_number" in state:
+                    normalized_details["user_phone_number"] = state.get("user_phone_number")
+        
+        # Always ensure we have a normalized purpose
+        normalized_purpose = messagePurpose.lower().replace(" ", "_") if isinstance(messagePurpose, str) else "unknown"
+                
+        print(f"Normalized message purpose: {normalized_purpose}")
+        print(f"Normalized message details: {normalized_details}")
+        
+        # For each service, initialize the client explicitly
+        for service_config in organization_services:
+            if service_config["service_type"] == "woocommerce":
+                from app.service.woo.client import WooCommerceAPIClient
+                # Get credentials
+                creds = service_config.get("credentials", {})
+                woo_url = creds.get("woo_url")
+                consumer_key = creds.get("consumer_key")
+                consumer_secret = creds.get("consumer_secret")
+                
+                if woo_url and consumer_key and consumer_secret:
+                    # Initialize the client
+                    try:
+                        client = WooCommerceAPIClient(woo_url, consumer_key, consumer_secret)
+                        # Add the client to the service config
+                        service_config["client"] = client
+                        print(f"WooCommerce client initialized with URL: {woo_url}")
+                    except Exception as e:
+                        print(f"Error initializing WooCommerce client: {e}")
         
         # Find a service that can handle this message purpose
         service = ServiceRegistry.find_capable_service(
             organization_services=organization_services,
-            message_purpose=messagePurpose,
-            message_details=messageDetails
+            message_purpose=normalized_purpose,
+            message_details=normalized_details,
         )
-        
+        print(f"service were found {service}")
         # If we found a capable service, let it process the request
         if service:
-            result = service.process_request(messagePurpose, messageDetails)
-            response_text = result.get('response_text', '')
-            tool_output = result.get('tool_output')
+            # Process the request using the service with normalized details
+            result = service.process_request(normalized_purpose, normalized_details)
+            response_text = result.get("response_text", "")
+            tool_output = result.get("tool_output")
+            print(f"Service processed request and returned: {result}")
         # Fall back to generic responses if no service can handle it
-        elif messagePurpose == "order_query":
+        elif normalized_purpose == "order_query":
             response_text = "It looks like you're asking about an order, but I don't have access to your order information right now."
-        elif messagePurpose == "get_product_info":
+        elif normalized_purpose == "get_product_info":
             response_text = "I'd like to help you find product information, but I don't have access to your product catalog right now."
 
         # elif messagePurpose == "greeting":
@@ -429,20 +529,86 @@ def generate_response(state: WhatsAppMessageState) -> dict:
 
     agent_response = state.get("agent_response", "")
     tool_output = state.get("tool_output", None)
-    user_name = state.get("user_name", "there")
+    _user_name = state.get("user_name", "there")
 
     # Start building the message
-    message = f"Hi {user_name},\n\n{agent_response}"
+    message = agent_response  # f"Hi {user_name},\n\n{agent_response}"
 
-    # Append tool output if available and meaningful
+    # Append tool output if available and meaningful, but be selective to avoid exceeding WhatsApp's 1600 char limit
     if tool_output:
         if isinstance(tool_output, dict):
-            # Format dict nicely (simple key: value lines)
-            tool_text = "\n".join(f"{k}: {v}" for k, v in tool_output.items())
-            message += f"\n\nHere is the information you requested:\n{tool_text}"
+            # For order queries, create a clean, concise order summary
+            if 'id' in tool_output and 'status' in tool_output:  # This looks like an order
+                # Format order summary with minimal repetition
+                order_id = tool_output.get('id', 'Unknown')
+                status = tool_output.get('status', 'Unknown')
+                
+                # Format date in a more readable way if available
+                date_str = tool_output.get('date_created', '')
+                date_formatted = date_str.split('T')[0] if 'T' in date_str else date_str
+                
+                # Format currency properly
+                currency_symbol = tool_output.get('currency_symbol', '')
+                total = tool_output.get('total', '0.00')
+                formatted_total = f"{currency_symbol}{total}" if currency_symbol else total
+                
+                # Start with a clean, concise header
+                order_summary = [f"Order #{order_id}"]
+                
+                # Add core order information
+                if status:
+                    order_summary.append(f"Status: {status}")
+                if date_formatted:
+                    order_summary.append(f"Date: {date_formatted}")
+                if formatted_total:
+                    order_summary.append(f"Total: {formatted_total}")
+                
+                # Add payment method if available
+                payment_method = tool_output.get('payment_method_title', '')
+                if payment_method:
+                    order_summary.append(f"Payment: {payment_method}")
+                
+                # Add shipping method if available
+                shipping_method = ""
+                if 'shipping_lines' in tool_output and isinstance(tool_output['shipping_lines'], list) and tool_output['shipping_lines']:
+                    shipping_info = tool_output['shipping_lines'][0]  # Get the first shipping method
+                    shipping_method = shipping_info.get('method_title', '')
+                    if shipping_method:
+                        order_summary.append(f"Shipping: {shipping_method}")
+                    
+                # Format items section
+                items_text = ""
+                if 'line_items' in tool_output and isinstance(tool_output['line_items'], list) and tool_output['line_items']:
+                    items_text = "\n\nItems:"  # Double newline for separation
+                    for item in tool_output['line_items'][:5]:  # Show up to 5 items
+                        name = item.get('name', 'Unknown product')
+                        qty = item.get('quantity', 1)
+                        price = item.get('total', '0.00')
+                        items_text += f"\n• {name} x{qty} ({currency_symbol}{price})"
+                    
+                    if len(tool_output['line_items']) > 5:
+                        items_text += f"\n• ... and {len(tool_output['line_items']) - 5} more item(s)"
+                
+                # Combine everything into a clean message
+                order_text = "\n".join(order_summary)
+                message += f"\n\n{order_text}{items_text}"
+            else:
+                # For other dictionaries, limit to 10 key-value pairs and 800 chars total
+                tool_items = list(tool_output.items())[:10]
+                tool_text = "\n".join(f"{k}: {v}" for k, v in tool_items)
+                if len(tool_text) > 800:
+                    tool_text = tool_text[:797] + "..."
+                message += f"\n\nHere is the information you requested:\n{tool_text}"
         else:
-            # Otherwise just append as string
-            message += f"\n\n{tool_output}"
+            # If it's a string or other type, truncate if needed
+            tool_output_str = str(tool_output)
+            if len(tool_output_str) > 800:
+                tool_output_str = tool_output_str[:797] + "..."
+            message += f"\n\n{tool_output_str}"
+    
+    # Ensure the final message is under 1600 characters (WhatsApp limit)
+    if len(message) > 1550:  # Leave some buffer
+        message = message[:1547] + "..."
 
     # # Optionally add a friendly closing line
     # message += "\n\nIf you have more questions, just reply here!"
@@ -494,6 +660,7 @@ def send_whatsapp_message(state: WhatsAppMessageState, config: Dict[str, Any]):
 def get_tools():
     """Get the tools available to the agent."""
     return [search_documents, log_internal_notes, escalate_to_human]
+
 
 def model_with_tools():
     """

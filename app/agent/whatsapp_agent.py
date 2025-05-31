@@ -27,7 +27,12 @@ WOO_COMMERCE_BASE_URL = os.getenv("WOO_COMMERCE_BASE_URL")
 
 class WhatsAppAgent:
     def __init__(
-        self, account_sid=None, auth_token=None, model=None, organization_id=None, to_number=None
+        self,
+        account_sid=None,
+        auth_token=None,
+        model=None,
+        organization_id=None,
+        to_number=None,
     ):
         if account_sid and auth_token:
             self.woo_client = WooCommerceAPIClient(

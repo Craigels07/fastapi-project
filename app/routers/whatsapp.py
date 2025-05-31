@@ -8,11 +8,14 @@ from fastapi.responses import JSONResponse
 from app.agent.whatsapp_agent import WhatsAppAgent
 from app.models.user import Organization
 from app.models.whatsapp import WhatsAppUser, WhatsAppMessage
-from fastapi import Depends, HTTPException
-from sqlalchemy.orm import Session
+from app.crud.whatsapp import update_whatsapp_user_organization
+from app.schemas.whatsapp import WhatsAppUserUpdate
+from fastapi import Depends, HTTPException, status
 from datetime import datetime
+from uuid import UUID
 from app.schemas.whatsapp import WhatsAppMessageBase
 from app.database import get_db
+from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
 
@@ -118,17 +121,38 @@ async def whatsapp_receive_with_agent(
         print(f"Validation error: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
-    to_number = message_data.To.replace("whatsapp:", "") # This is your Twilio number
-    from_number = message_data.From.replace("whatsapp:", "") # This is the user's number
+    to_number = message_data.To.replace("whatsapp:", "")  # This is your Twilio number
+    from_number = message_data.From.replace(
+        "whatsapp:", ""
+    )  # This is the user's number
 
+    # Look up organization by phone number
     organization = (
         db.query(Organization)
         .filter(Organization.phone_number == str(to_number))
         .first()
     )
-    organization.woo_commerce = True
-    db.commit()
-    print("organization:", organization)
+
+    # Staging mode for Twilio sandbox testing
+    STAGING_MODE = os.getenv("WHATSAPP_STAGING_MODE", "False").lower() == "true"
+    STAGING_ORG_ID = os.getenv("WHATSAPP_STAGING_ORG_ID")
+
+    if STAGING_MODE and not organization and STAGING_ORG_ID:
+        # Use a predefined organization for staging/testing
+        try:
+            from uuid import UUID
+
+            staging_org_id = UUID(STAGING_ORG_ID)
+            organization = (
+                db.query(Organization).filter(Organization.id == staging_org_id).first()
+            )
+            print(
+                f"Using staging organization: {organization.name} (ID: {organization.id})"
+            )
+        except (ValueError, TypeError) as e:
+            print(f"Error parsing staging organization ID: {e}")
+
+    print("organization id:", organization.id)
     if not organization:
         raise HTTPException(status_code=400, detail="Unknown organization")
 
@@ -185,7 +209,11 @@ async def whatsapp_receive_with_agent(
     # Create a WhatsApp agent with tools
     llm_with_tools = model_with_tools()
     whatsapp_agent = WhatsAppAgent(
-        account_sid, auth_token, model=llm_with_tools, organization_id=organization.id, to_number=to_number
+        account_sid,
+        auth_token,
+        model=llm_with_tools,
+        organization_id=organization.id,
+        to_number=to_number,
     )
 
     # Process the message through the agent workflow
@@ -198,3 +226,45 @@ async def whatsapp_receive_with_agent(
     final_message = agent_result.get("final_message", "I'm processing your request...")
 
     return PlainTextResponse(content=str(final_message), media_type="application/xml")
+
+
+@router.patch(
+    "/users/{whatsapp_user_id}/organization",
+    summary="Update a WhatsApp user's organization",
+    response_model=dict,
+)
+async def update_whatsapp_user_organization_endpoint(
+    whatsapp_user_id: UUID,
+    user_update: WhatsAppUserUpdate,
+    db: Session = Depends(get_db),
+):
+    """
+    Update a WhatsApp user's organization
+
+    Args:
+        whatsapp_user_id: The ID of the WhatsApp user to update
+        user_update: The update data containing the new organization ID
+        db: Database session
+
+    Returns:
+        Updated WhatsApp user information
+    """
+    # Update the user's organization
+    updated_user = update_whatsapp_user_organization(
+        db=db, user_id=whatsapp_user_id, organization_id=user_update.organization_id
+    )
+
+    if not updated_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="WhatsApp user not found or organization does not exist",
+        )
+
+    # Return the updated user information
+    return {
+        "id": str(updated_user.id),
+        "phone_number": updated_user.phone_number,
+        "organization_id": str(updated_user.organization_id),
+        "profile_name": updated_user.profile_name,
+        "message": "WhatsApp user organization updated successfully",
+    }

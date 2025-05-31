@@ -22,9 +22,9 @@ def generate_whatsapp_user_code():
     """Generate a human-readable WhatsApp user code like WHA-XYZ-123"""
     prefix = "WHA"
     # Generate 3 random uppercase letters
-    letters = ''.join(random.choices(string.ascii_uppercase, k=3))
+    letters = "".join(random.choices(string.ascii_uppercase, k=3))
     # Generate 3 random digits
-    digits = ''.join(random.choices(string.digits, k=3))
+    digits = "".join(random.choices(string.digits, k=3))
     return f"{prefix}-{letters}-{digits}"
 
 
@@ -50,9 +50,9 @@ def generate_whatsapp_message_code():
     """Generate a human-readable WhatsApp message code like MSG-XYZ-123"""
     prefix = "MSG"
     # Generate 3 random uppercase letters
-    letters = ''.join(random.choices(string.ascii_uppercase, k=3))
+    letters = "".join(random.choices(string.ascii_uppercase, k=3))
     # Generate 3 random digits
-    digits = ''.join(random.choices(string.digits, k=3))
+    digits = "".join(random.choices(string.digits, k=3))
     return f"{prefix}-{letters}-{digits}"
 
 
@@ -64,7 +64,9 @@ class WhatsAppMessage(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("whatsapp_users.id"))
     user = relationship("WhatsAppUser", back_populates="messages")
 
-    thread_id = Column(UUID(as_uuid=True), ForeignKey("whatsapp_threads.id"), nullable=True)
+    thread_id = Column(
+        UUID(as_uuid=True), ForeignKey("whatsapp_threads.id"), nullable=True
+    )
     thread = relationship("WhatsAppThread", back_populates="messages")
 
     direction = Column(String, nullable=False)  # "inbound" or "outbound"
@@ -95,9 +97,9 @@ def generate_whatsapp_thread_code():
     """Generate a human-readable WhatsApp thread code like THR-XYZ-123"""
     prefix = "THR"
     # Generate 3 random uppercase letters
-    letters = ''.join(random.choices(string.ascii_uppercase, k=3))
+    letters = "".join(random.choices(string.ascii_uppercase, k=3))
     # Generate 3 random digits
-    digits = ''.join(random.choices(string.digits, k=3))
+    digits = "".join(random.choices(string.digits, k=3))
     return f"{prefix}-{letters}-{digits}"
 
 
@@ -112,7 +114,7 @@ class WhatsAppThread(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
-    
+
     user = relationship("WhatsAppUser", back_populates="threads")
     messages = relationship("WhatsAppMessage", back_populates="thread")
 
@@ -121,19 +123,19 @@ class WhatsAppThread(Base):
 
 
 # Event listeners to automatically generate codes
-@event.listens_for(WhatsAppUser, 'before_insert')
+@event.listens_for(WhatsAppUser, "before_insert")
 def set_whatsapp_user_code(mapper, connection, target):
     if not target.code:
         target.code = generate_whatsapp_user_code()
 
 
-@event.listens_for(WhatsAppMessage, 'before_insert')
+@event.listens_for(WhatsAppMessage, "before_insert")
 def set_whatsapp_message_code(mapper, connection, target):
     if not target.code:
         target.code = generate_whatsapp_message_code()
 
 
-@event.listens_for(WhatsAppThread, 'before_insert')
+@event.listens_for(WhatsAppThread, "before_insert")
 def set_whatsapp_thread_code(mapper, connection, target):
     if not target.code:
         target.code = generate_whatsapp_thread_code()

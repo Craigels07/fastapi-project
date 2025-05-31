@@ -39,7 +39,7 @@ def create_organization(
 def create_user(db: Session, user: UserCreate) -> User:
     # Hash the password
     hashed_password = pwd_context.hash(user.password)
-    
+
     # Create new user with all fields including password
     new_user = User(
         name=user.name,
@@ -72,7 +72,9 @@ def get_users(db: Session, skip: int = 0, limit: int = 100) -> List[User]:
     return db.query(User).offset(skip).limit(limit).all()
 
 
-def update_user(db: Session, user_id: Union[UUID, str], user: UserUpdate) -> Optional[User]:
+def update_user(
+    db: Session, user_id: Union[UUID, str], user: UserUpdate
+) -> Optional[User]:
     db_user = get_user(db, user_id)
     if db_user:
         update_data = user.dict(exclude_unset=True)
