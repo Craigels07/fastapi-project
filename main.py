@@ -9,7 +9,6 @@ from app.routers import (
 )
 from app.auth.router import router as auth_router
 import uvicorn
-from app.service.ngrok.service import start_ngrok_tunnel
 import os
 from dotenv import load_dotenv
 
@@ -39,6 +38,7 @@ app.include_router(documents.router)
 app.include_router(whatsapp.router)
 
 if ENVIROMENT == "local":
+    from app.service.ngrok.service import start_ngrok_tunnel
     start_ngrok_tunnel()
 
 if __name__ == "__main__":
