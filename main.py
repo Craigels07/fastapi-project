@@ -17,7 +17,7 @@ load_dotenv()
 
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
-
+ENVIROMENT = os.getenv("ENVIROMENT")
 
 app = FastAPI()
 
@@ -38,7 +38,8 @@ app.include_router(services.router)
 app.include_router(documents.router)
 app.include_router(whatsapp.router)
 
-start_ngrok_tunnel()
+if ENVIROMENT == "local":
+    start_ngrok_tunnel()
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
