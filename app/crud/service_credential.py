@@ -79,7 +79,7 @@ def update_service_credential(
         return None
 
     # Update fields
-    update_data = credential_update.dict(exclude_unset=True)
+    update_data = credential_update.model_dump(exclude_unset=True)
 
     # Handle credentials specially - they need to be encrypted
     if "credentials" in update_data:

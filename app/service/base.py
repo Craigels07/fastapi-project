@@ -1,3 +1,5 @@
+"""Base interface for all external service integrations."""
+
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional, Type, ClassVar
 

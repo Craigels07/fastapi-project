@@ -59,6 +59,12 @@ def generate_whatsapp_message_code():
 class WhatsAppMessage(Base):
     __tablename__ = "whatsapp_messages"
 
+    ROLE = {
+        "USER": "user",
+        "AGENT": "agent",
+        "SYSTEM": "system",
+    }
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     code = Column(String, unique=True, index=True, nullable=False)
     user_id = Column(UUID(as_uuid=True), ForeignKey("whatsapp_users.id"))
@@ -70,6 +76,7 @@ class WhatsAppMessage(Base):
     thread = relationship("WhatsAppThread", back_populates="messages")
 
     direction = Column(String, nullable=False)  # "inbound" or "outbound"
+    role = Column(String, nullable=True, default=ROLE["USER"])  # user, agent, etc.
     content = Column(Text, nullable=False)
     timestamp = Column(String, nullable=False)
 

@@ -1,4 +1,4 @@
-# app/service/woo/utils.py
+"""Utils for handling WooCommerce operations."""
 
 from typing import Dict, Any, List
 

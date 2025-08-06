@@ -24,7 +24,7 @@ async def test_woocommerce_products(
 ):
     """
     Test endpoint to retrieve products from WooCommerce.
-    
+
     Args:
         organization_id: Organization ID to connect to WooCommerce
         query: Optional search query to filter products
@@ -32,7 +32,7 @@ async def test_woocommerce_products(
     # Check if user has access to this organization
     # Convert organization_id to string if it's not already
     check_organization_access(str(organization_id), current_user)
-    
+
     # Get organization credentials
     organization = db.query(Organization).filter_by(id=organization_id).first()
     if not organization:
@@ -44,36 +44,40 @@ async def test_woocommerce_products(
     from app.models.service_credential import ServiceCredential, ServiceTypeEnum
     from app.utils.encryption import decrypt_data
     import json
-    
+
     try:
         # Find WooCommerce credentials for this organization
-        woo_credentials = db.query(ServiceCredential).filter(
-            ServiceCredential.organization_id == organization.id,
-            ServiceCredential.service_type == ServiceTypeEnum.WOOCOMMERCE,
-            ServiceCredential.is_active == "true"
-        ).first()
-        
+        woo_credentials = (
+            db.query(ServiceCredential)
+            .filter(
+                ServiceCredential.organization_id == organization.id,
+                ServiceCredential.service_type == ServiceTypeEnum.WOOCOMMERCE,
+                ServiceCredential.is_active == "true",
+            )
+            .first()
+        )
+
         if not woo_credentials:
             raise HTTPException(
                 status_code=400,
                 detail="Organization doesn't have WooCommerce credentials configured",
             )
-        
+
         # Decrypt credentials
         decrypted_json = decrypt_data(woo_credentials.credentials)
         creds = json.loads(decrypted_json)
-        
+
         # Extract credential values
         woo_url = creds.get("woo_url")
         consumer_key = creds.get("consumer_key")
         consumer_secret = creds.get("consumer_secret")
-        
+
         if not all([woo_url, consumer_key, consumer_secret]):
             raise HTTPException(
                 status_code=400,
                 detail="Organization's WooCommerce credentials are incomplete",
             )
-            
+
         # Create WooCommerce client
         woo_client = WooCommerceAPIClient(
             base_url=woo_url,
@@ -83,7 +87,7 @@ async def test_woocommerce_products(
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Error retrieving WooCommerce credentials: {str(e)}"
+            detail=f"Error retrieving WooCommerce credentials: {str(e)}",
         )
 
     # Create WooService instance
@@ -113,14 +117,14 @@ async def test_get_all_woocommerce_products(
 ):
     """
     Test endpoint to retrieve all products from WooCommerce.
-    
+
     Args:
         organization_id: Organization ID to connect to WooCommerce
     """
     # Check if user has access to this organization
     # Convert organization_id to string if it's not already
     check_organization_access(str(organization_id), current_user)
-    
+
     # Get organization credentials
     organization = db.query(Organization).filter_by(id=organization_id).first()
     if not organization:
@@ -132,36 +136,40 @@ async def test_get_all_woocommerce_products(
     from app.models.service_credential import ServiceCredential, ServiceTypeEnum
     from app.utils.encryption import decrypt_data
     import json
-    
+
     try:
         # Find WooCommerce credentials for this organization
-        woo_credentials = db.query(ServiceCredential).filter(
-            ServiceCredential.organization_id == organization.id,
-            ServiceCredential.service_type == ServiceTypeEnum.WOOCOMMERCE,
-            ServiceCredential.is_active == "true"
-        ).first()
-        
+        woo_credentials = (
+            db.query(ServiceCredential)
+            .filter(
+                ServiceCredential.organization_id == organization.id,
+                ServiceCredential.service_type == ServiceTypeEnum.WOOCOMMERCE,
+                ServiceCredential.is_active == "true",
+            )
+            .first()
+        )
+
         if not woo_credentials:
             raise HTTPException(
                 status_code=400,
                 detail="Organization doesn't have WooCommerce credentials configured",
             )
-        
+
         # Decrypt credentials
         decrypted_json = decrypt_data(woo_credentials.credentials)
         creds = json.loads(decrypted_json)
-        
+
         # Extract credential values
         woo_url = creds.get("woo_url")
         consumer_key = creds.get("consumer_key")
         consumer_secret = creds.get("consumer_secret")
-        
+
         if not all([woo_url, consumer_key, consumer_secret]):
             raise HTTPException(
                 status_code=400,
                 detail="Organization's WooCommerce credentials are incomplete",
             )
-            
+
         # Create WooCommerce client
         woo_client = WooCommerceAPIClient(
             base_url=woo_url,
@@ -171,7 +179,7 @@ async def test_get_all_woocommerce_products(
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Error retrieving WooCommerce credentials: {str(e)}"
+            detail=f"Error retrieving WooCommerce credentials: {str(e)}",
         )
 
     # Create WooService instance
@@ -195,14 +203,14 @@ async def test_get_all_woocommerce_orders(
 ):
     """
     Test endpoint to retrieve all orders from WooCommerce.
-    
+
     Args:
         organization_id: Organization ID to connect to WooCommerce
     """
     # Check if user has access to this organization
     # Convert organization_id to string if it's not already
     check_organization_access(str(organization_id), current_user)
-    
+
     # Get organization credentials
     organization = db.query(Organization).filter_by(id=organization_id).first()
     if not organization:
@@ -214,36 +222,40 @@ async def test_get_all_woocommerce_orders(
     from app.models.service_credential import ServiceCredential, ServiceTypeEnum
     from app.utils.encryption import decrypt_data
     import json
-    
+
     try:
         # Find WooCommerce credentials for this organization
-        woo_credentials = db.query(ServiceCredential).filter(
-            ServiceCredential.organization_id == organization.id,
-            ServiceCredential.service_type == ServiceTypeEnum.WOOCOMMERCE,
-            ServiceCredential.is_active == "true"
-        ).first()
-        
+        woo_credentials = (
+            db.query(ServiceCredential)
+            .filter(
+                ServiceCredential.organization_id == organization.id,
+                ServiceCredential.service_type == ServiceTypeEnum.WOOCOMMERCE,
+                ServiceCredential.is_active == "true",
+            )
+            .first()
+        )
+
         if not woo_credentials:
             raise HTTPException(
                 status_code=400,
                 detail="Organization doesn't have WooCommerce credentials configured",
             )
-        
+
         # Decrypt credentials
         decrypted_json = decrypt_data(woo_credentials.credentials)
         creds = json.loads(decrypted_json)
-        
+
         # Extract credential values
         woo_url = creds.get("woo_url")
         consumer_key = creds.get("consumer_key")
         consumer_secret = creds.get("consumer_secret")
-        
+
         if not all([woo_url, consumer_key, consumer_secret]):
             raise HTTPException(
                 status_code=400,
                 detail="Organization's WooCommerce credentials are incomplete",
             )
-            
+
         # Create WooCommerce client
         woo_client = WooCommerceAPIClient(
             base_url=woo_url,
@@ -253,7 +265,7 @@ async def test_get_all_woocommerce_orders(
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Error retrieving WooCommerce credentials: {str(e)}"
+            detail=f"Error retrieving WooCommerce credentials: {str(e)}",
         )
 
     # Create WooService instance
@@ -291,36 +303,40 @@ async def test_woocommerce_order(
     from app.models.service_credential import ServiceCredential, ServiceTypeEnum
     from app.utils.encryption import decrypt_data
     import json
-    
+
     try:
         # Find WooCommerce credentials for this organization
-        woo_credentials = db.query(ServiceCredential).filter(
-            ServiceCredential.organization_id == organization.id,
-            ServiceCredential.service_type == ServiceTypeEnum.WOOCOMMERCE,
-            ServiceCredential.is_active == "true"
-        ).first()
-        
+        woo_credentials = (
+            db.query(ServiceCredential)
+            .filter(
+                ServiceCredential.organization_id == organization.id,
+                ServiceCredential.service_type == ServiceTypeEnum.WOOCOMMERCE,
+                ServiceCredential.is_active == "true",
+            )
+            .first()
+        )
+
         if not woo_credentials:
             raise HTTPException(
                 status_code=400,
                 detail="Organization doesn't have WooCommerce credentials configured",
             )
-        
+
         # Decrypt credentials
         decrypted_json = decrypt_data(woo_credentials.credentials)
         creds = json.loads(decrypted_json)
-        
+
         # Extract credential values
         woo_url = creds.get("woo_url")
         consumer_key = creds.get("consumer_key")
         consumer_secret = creds.get("consumer_secret")
-        
+
         if not all([woo_url, consumer_key, consumer_secret]):
             raise HTTPException(
                 status_code=400,
                 detail="Organization's WooCommerce credentials are incomplete",
             )
-            
+
         # Create WooCommerce client
         woo_client = WooCommerceAPIClient(
             base_url=woo_url,
@@ -330,7 +346,7 @@ async def test_woocommerce_order(
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Error retrieving WooCommerce credentials: {str(e)}"
+            detail=f"Error retrieving WooCommerce credentials: {str(e)}",
         )
 
     # Create WooService instance

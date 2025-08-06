@@ -15,6 +15,7 @@ from app.schemas.service_credential import (
     TakealotCredentials,
 )
 from app.crud import service_credential as credential_crud
+from app.utils.encryption import decrypt_data
 
 router = APIRouter(prefix="/service-credentials", tags=["service-credentials"])
 
@@ -89,6 +90,8 @@ async def get_credential(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to view this credential",
         )
+
+    credential.credentials = decrypt_data(credential.credentials)
 
     return credential
 

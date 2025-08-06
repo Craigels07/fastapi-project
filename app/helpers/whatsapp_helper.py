@@ -140,36 +140,48 @@ def log_internal_notes():
 
 
 async def receive_message(state: WhatsAppMessageState) -> dict:
+    """
+    Receives a message, stores it in the database, and updates the state.
+    """
     received_message = state.get("received_message")
     user_phone_number = state.get("user_phone_number")
     timestamp = datetime.now().isoformat()
+    organization_id = state.get("organization_id")
+    whatsapp_message_id = state.get("whatsapp_message_id")
 
     db_generator = get_db()
     db: Session = next(db_generator)
 
     try:
-        print(f"user_phone_number: {user_phone_number}")
         user = db.query(WhatsAppUser).filter_by(phone_number=user_phone_number).first()
-
         if not user:
-            raise ValueError(f"User with number: {user_phone_number}, not found.")
+            user = WhatsAppUser(
+                phone_number=user_phone_number, organization_id=organization_id
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
 
-        user_id = user.id
+        message = WhatsAppMessage(
+            code=whatsapp_message_id,
+            user_id=user.id,
+            content=received_message,
+            role=WhatsAppMessage.ROLE["USER"],
+            timestamp=timestamp,
+            direction="inbound",
+        )
+        db.add(message)
+        db.commit()
 
-    except Exception as e:
-        print(f"Error retrieving WhatsApp message: {e}")
-        db.rollback()
+        return {
+            **state,
+            "user_id": str(user.id),
+            "received_message": received_message,
+            "user_phone_number": user_phone_number,
+        }
 
     finally:
         db.close()
-
-    # Return updated state for next node
-    return {
-        **state,
-        "received_message": received_message,
-        "user_id": user_id,
-        "timestamp": timestamp,
-    }
 
 
 async def parse_intent(state: WhatsAppMessageState, config: Dict[str, Any]) -> dict:
@@ -347,35 +359,47 @@ async def run_agent_reasoning(
 
             try:
                 # Try to query service credentials, but handle case where table doesn't exist
-                service_credentials = list(db.query(ServiceCredential).filter_by(organization_id=organization_id))
+                service_credentials = list(
+                    db.query(ServiceCredential).filter_by(
+                        organization_id=organization_id
+                    )
+                )
                 # Convert SQLAlchemy models to dictionaries for ServiceRegistry
                 organization_services = []
                 for cred in service_credentials:
                     # Convert enum to string if it's an enum
-                    service_type = cred.service_type.value if hasattr(cred.service_type, 'value') else str(cred.service_type)
-                    
+                    service_type = (
+                        cred.service_type.value
+                        if hasattr(cred.service_type, "value")
+                        else str(cred.service_type)
+                    )
+
                     # Decrypt the credentials
                     try:
                         from app.utils.encryption import decrypt_data
                         import json
-                        
+
                         # Decrypt the credentials and parse as JSON
                         decrypted_json = decrypt_data(cred.credentials)
                         credentials_dict = json.loads(decrypted_json)
                     except Exception as e:
                         print(f"Error decrypting credentials: {e}")
                         credentials_dict = {}
-                    
+
                     # Create dict with required service_type key and other useful attributes
                     service_dict = {
                         "service_type": service_type,
                         "credentials": credentials_dict,  # Use decrypted credentials dictionary
                         "organization_id": str(cred.organization_id),
-                        "is_active": cred.is_active.lower() == 'true' if isinstance(cred.is_active, str) else bool(cred.is_active),
-                        "id": str(cred.id)
+                        "is_active": cred.is_active.lower() == "true"
+                        if isinstance(cred.is_active, str)
+                        else bool(cred.is_active),
+                        "id": str(cred.id),
                     }
                     organization_services.append(service_dict)
-                print(f"Available services for organization {organization.id}: {organization_services}")
+                print(
+                    f"Available services for organization {organization.id}: {organization_services}"
+                )
             except Exception as e:
                 # Handle case where table doesn't exist or other DB errors
                 print(f"Error fetching service credentials: {e}")
@@ -384,25 +408,32 @@ async def run_agent_reasoning(
         # Print debug information about message details
         print(f"Message purpose: {messagePurpose}")
         print(f"Message details: {messageDetails}")
-        
+
         # Normalize message details keys to match what services expect
         normalized_details = {}
-        
+
         # Include user phone number from state for security verification
         if "user_phone_number" in state:
             normalized_details["user_phone_number"] = state.get("user_phone_number")
-        
+
         # Ensure messageDetails is a dictionary
         if not isinstance(messageDetails, dict):
-            print(f"Warning: messageDetails is not a dictionary. Type: {type(messageDetails)}, Value: {messageDetails}")
+            print(
+                f"Warning: messageDetails is not a dictionary. Type: {type(messageDetails)}, Value: {messageDetails}"
+            )
             # Convert to dictionary if possible
             if isinstance(messageDetails, str):
                 # Check for patterns like "Order ID 41642"
                 import re
-                
+
                 # For order queries
-                order_id_match = re.search(r'order\s*id\s*(\d+)', messageDetails, re.IGNORECASE)
-                if order_id_match and messagePurpose.lower().replace(" ", "_") == "order_query":
+                order_id_match = re.search(
+                    r"order\s*id\s*(\d+)", messageDetails, re.IGNORECASE
+                )
+                if (
+                    order_id_match
+                    and messagePurpose.lower().replace(" ", "_") == "order_query"
+                ):
                     order_id = order_id_match.group(1)
                     normalized_details["order_id"] = order_id
                     print(f"Extracted order ID: {order_id} from string message details")
@@ -411,20 +442,27 @@ async def run_agent_reasoning(
                     normalized_details["query"] = messageDetails
             else:
                 # Default to empty dictionary if we can't process it
-                if "user_phone_number" not in normalized_details and "user_phone_number" in state:
-                    normalized_details["user_phone_number"] = state.get("user_phone_number")
+                if (
+                    "user_phone_number" not in normalized_details
+                    and "user_phone_number" in state
+                ):
+                    normalized_details["user_phone_number"] = state.get(
+                        "user_phone_number"
+                    )
         else:
             # Map specific keys to match service expectations
             try:
                 if "order ID" in messageDetails:
                     normalized_details["order_id"] = messageDetails["order ID"]
-                
+
                 if "product name" in messageDetails:
                     normalized_details["product_name"] = messageDetails["product name"]
-                    
+
                 if "product description" in messageDetails:
-                    normalized_details["product_description"] = messageDetails["product description"]
-                    
+                    normalized_details["product_description"] = messageDetails[
+                        "product description"
+                    ]
+
                 # Add any other keys directly
                 for key, value in messageDetails.items():
                     if key not in ["order ID", "product name", "product description"]:
@@ -434,34 +472,43 @@ async def run_agent_reasoning(
                 # Provide a simple fallback with the original message details
                 normalized_details = {"original": str(messageDetails)}
                 if "user_phone_number" in state:
-                    normalized_details["user_phone_number"] = state.get("user_phone_number")
-        
+                    normalized_details["user_phone_number"] = state.get(
+                        "user_phone_number"
+                    )
+
         # Always ensure we have a normalized purpose
-        normalized_purpose = messagePurpose.lower().replace(" ", "_") if isinstance(messagePurpose, str) else "unknown"
-                
+        normalized_purpose = (
+            messagePurpose.lower().replace(" ", "_")
+            if isinstance(messagePurpose, str)
+            else "unknown"
+        )
+
         print(f"Normalized message purpose: {normalized_purpose}")
         print(f"Normalized message details: {normalized_details}")
-        
+
         # For each service, initialize the client explicitly
         for service_config in organization_services:
             if service_config["service_type"] == "woocommerce":
                 from app.service.woo.client import WooCommerceAPIClient
+
                 # Get credentials
                 creds = service_config.get("credentials", {})
                 woo_url = creds.get("woo_url")
                 consumer_key = creds.get("consumer_key")
                 consumer_secret = creds.get("consumer_secret")
-                
+
                 if woo_url and consumer_key and consumer_secret:
                     # Initialize the client
                     try:
-                        client = WooCommerceAPIClient(woo_url, consumer_key, consumer_secret)
+                        client = WooCommerceAPIClient(
+                            woo_url, consumer_key, consumer_secret
+                        )
                         # Add the client to the service config
                         service_config["client"] = client
                         print(f"WooCommerce client initialized with URL: {woo_url}")
                     except Exception as e:
                         print(f"Error initializing WooCommerce client: {e}")
-        
+
         # Find a service that can handle this message purpose
         service = ServiceRegistry.find_capable_service(
             organization_services=organization_services,
@@ -538,23 +585,27 @@ def generate_response(state: WhatsAppMessageState) -> dict:
     if tool_output:
         if isinstance(tool_output, dict):
             # For order queries, create a clean, concise order summary
-            if 'id' in tool_output and 'status' in tool_output:  # This looks like an order
+            if (
+                "id" in tool_output and "status" in tool_output
+            ):  # This looks like an order
                 # Format order summary with minimal repetition
-                order_id = tool_output.get('id', 'Unknown')
-                status = tool_output.get('status', 'Unknown')
-                
+                order_id = tool_output.get("id", "Unknown")
+                status = tool_output.get("status", "Unknown")
+
                 # Format date in a more readable way if available
-                date_str = tool_output.get('date_created', '')
-                date_formatted = date_str.split('T')[0] if 'T' in date_str else date_str
-                
+                date_str = tool_output.get("date_created", "")
+                date_formatted = date_str.split("T")[0] if "T" in date_str else date_str
+
                 # Format currency properly
-                currency_symbol = tool_output.get('currency_symbol', '')
-                total = tool_output.get('total', '0.00')
-                formatted_total = f"{currency_symbol}{total}" if currency_symbol else total
-                
+                currency_symbol = tool_output.get("currency_symbol", "")
+                total = tool_output.get("total", "0.00")
+                formatted_total = (
+                    f"{currency_symbol}{total}" if currency_symbol else total
+                )
+
                 # Start with a clean, concise header
                 order_summary = [f"Order #{order_id}"]
-                
+
                 # Add core order information
                 if status:
                     order_summary.append(f"Status: {status}")
@@ -562,33 +613,43 @@ def generate_response(state: WhatsAppMessageState) -> dict:
                     order_summary.append(f"Date: {date_formatted}")
                 if formatted_total:
                     order_summary.append(f"Total: {formatted_total}")
-                
+
                 # Add payment method if available
-                payment_method = tool_output.get('payment_method_title', '')
+                payment_method = tool_output.get("payment_method_title", "")
                 if payment_method:
                     order_summary.append(f"Payment: {payment_method}")
-                
+
                 # Add shipping method if available
                 shipping_method = ""
-                if 'shipping_lines' in tool_output and isinstance(tool_output['shipping_lines'], list) and tool_output['shipping_lines']:
-                    shipping_info = tool_output['shipping_lines'][0]  # Get the first shipping method
-                    shipping_method = shipping_info.get('method_title', '')
+                if (
+                    "shipping_lines" in tool_output
+                    and isinstance(tool_output["shipping_lines"], list)
+                    and tool_output["shipping_lines"]
+                ):
+                    shipping_info = tool_output["shipping_lines"][
+                        0
+                    ]  # Get the first shipping method
+                    shipping_method = shipping_info.get("method_title", "")
                     if shipping_method:
                         order_summary.append(f"Shipping: {shipping_method}")
-                    
+
                 # Format items section
                 items_text = ""
-                if 'line_items' in tool_output and isinstance(tool_output['line_items'], list) and tool_output['line_items']:
+                if (
+                    "line_items" in tool_output
+                    and isinstance(tool_output["line_items"], list)
+                    and tool_output["line_items"]
+                ):
                     items_text = "\n\nItems:"  # Double newline for separation
-                    for item in tool_output['line_items'][:5]:  # Show up to 5 items
-                        name = item.get('name', 'Unknown product')
-                        qty = item.get('quantity', 1)
-                        price = item.get('total', '0.00')
+                    for item in tool_output["line_items"][:5]:  # Show up to 5 items
+                        name = item.get("name", "Unknown product")
+                        qty = item.get("quantity", 1)
+                        price = item.get("total", "0.00")
                         items_text += f"\n• {name} x{qty} ({currency_symbol}{price})"
-                    
-                    if len(tool_output['line_items']) > 5:
+
+                    if len(tool_output["line_items"]) > 5:
                         items_text += f"\n• ... and {len(tool_output['line_items']) - 5} more item(s)"
-                
+
                 # Combine everything into a clean message
                 order_text = "\n".join(order_summary)
                 message += f"\n\n{order_text}{items_text}"
@@ -605,7 +666,7 @@ def generate_response(state: WhatsAppMessageState) -> dict:
             if len(tool_output_str) > 800:
                 tool_output_str = tool_output_str[:797] + "..."
             message += f"\n\n{tool_output_str}"
-    
+
     # Ensure the final message is under 1600 characters (WhatsApp limit)
     if len(message) > 1550:  # Leave some buffer
         message = message[:1547] + "..."
@@ -638,13 +699,17 @@ def send_whatsapp_message(state: WhatsAppMessageState, config: Dict[str, Any]):
     user_phone_number = state.get("user_phone_number")
     organization_phone_number = config["configurable"].get("organization_phone_number")
     print(f"final_message: {final_message}")
-    print(f"user_phone_number: {user_phone_number}")
     print(f"organization_phone_number: {organization_phone_number}")
 
     if not all([final_message, user_phone_number, organization_phone_number]):
         raise ValueError(
             "Missing one or more required fields in state: 'final_message', 'user_phone_number', or 'organization_phone_number'."
         )
+
+    print("user_phone_number: ", user_phone_number)
+    if os.getenv("ENVIRONMENT") == "development" or os.getenv("ENVIRONMENT") == "staging":
+        user_phone_number = str(os.getenv("DEV_WHATSAPP_NUMBER"))
+    print("user_phone_number: ", user_phone_number)
 
     message = client.messages.create(
         body=final_message,
@@ -654,7 +719,12 @@ def send_whatsapp_message(state: WhatsAppMessageState, config: Dict[str, Any]):
         else f"whatsapp:{user_phone_number}",
     )
 
-    return {"message_sid": message.sid, "status": message.status}
+    return {
+        **state,
+        "final_message": final_message,
+        "message_sid": message.sid,
+        "status": message.status,
+    }
 
 
 def get_tools():

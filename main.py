@@ -6,6 +6,7 @@ from app.routers import (
     organization,
     services,
     service_credentials,
+    woo_monitor,
 )
 from app.auth.router import router as auth_router
 import uvicorn
@@ -16,7 +17,10 @@ load_dotenv()
 
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
-ENVIROMENT = os.getenv("ENVIROMENT")
+ENVIRONMENT = os.getenv("ENVIRONMENT")
+APP_BASE_URL = os.getenv(
+    "RAILWAY_STATIC_URL", "http://localhost:8000"
+)  # Fallback to localhost in development
 
 app = FastAPI()
 
@@ -36,9 +40,11 @@ app.include_router(service_credentials.router)
 app.include_router(services.router)
 app.include_router(documents.router)
 app.include_router(whatsapp.router)
+app.include_router(woo_monitor.router)
 
-if ENVIROMENT == "local":
+if ENVIRONMENT == "development":
     from app.service.ngrok.service import start_ngrok_tunnel
+
     start_ngrok_tunnel()
 
 if __name__ == "__main__":
