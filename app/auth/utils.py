@@ -1,17 +1,36 @@
 from passlib.context import CryptContext
+import bcrypt
+import logging
 from typing import Optional
 from sqlalchemy.orm import Session
 from app.models.user import User
 
 # Password hashing setup
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+logger = logging.getLogger(__name__)
 
 
 def verify_password(plain_password, hashed_password):
     """
     Verify a password against a hash
     """
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        if isinstance(hashed_password, str) and (
+            hashed_password.startswith("$2a$")
+            or hashed_password.startswith("$2b$")
+            or hashed_password.startswith("$2y$")
+        ):
+            pw_bytes = plain_password.encode("utf-8") if isinstance(plain_password, str) else plain_password
+            hp_bytes = hashed_password.encode("utf-8")
+            ok = bcrypt.checkpw(pw_bytes[:72], hp_bytes)
+            logger.debug("verify_password legacy_bcrypt result=%s", ok)
+            return ok
+        ok = pwd_context.verify(plain_password, hashed_password)
+        logger.debug("verify_password context result=%s", ok)
+        return ok
+    except Exception:
+        logger.exception("verify_password exception")
+        return False
 
 
 def get_password_hash(password):
@@ -31,7 +50,6 @@ def authenticate_user(db: Session, email: str, password: str) -> Optional[User]:
     if not user:
         return None
     if not hasattr(user, "password"):
-        # If you haven't added a password field to your user model yet
         return None
     if not verify_password(password, user.password):
         return None

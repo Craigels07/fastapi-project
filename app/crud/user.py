@@ -11,10 +11,9 @@ from app.schemas.user import (
 )
 from app.models.user import Organization
 from uuid import UUID
-from passlib.context import CryptContext
+from app.auth.utils import get_password_hash
 
 # Password handling
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 router = APIRouter()
 
@@ -38,7 +37,7 @@ def create_organization(
 
 def create_user(db: Session, user: UserCreate) -> User:
     # Hash the password
-    hashed_password = pwd_context.hash(user.password)
+    hashed_password = get_password_hash(user.password)
 
     # Create new user with all fields including password
     new_user = User(
@@ -79,7 +78,10 @@ def update_user(
     if db_user:
         update_data = user.dict(exclude_unset=True)
         for field, value in update_data.items():
-            setattr(db_user, field, value)
+            if field == "password":
+                setattr(db_user, field, get_password_hash(value))
+            else:
+                setattr(db_user, field, value)
         db.commit()
         db.refresh(db_user)
     return db_user

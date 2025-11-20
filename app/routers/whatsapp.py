@@ -7,21 +7,65 @@ from app.helpers.whatsapp_helper import send_whatsapp_message, model_with_tools
 from fastapi.responses import JSONResponse
 from app.agent.whatsapp_agent import WhatsAppAgent
 from app.models.user import Organization
-from app.models.whatsapp import WhatsAppUser, WhatsAppMessage
-from app.crud.whatsapp import update_whatsapp_user_organization
-from app.schemas.whatsapp import WhatsAppUserUpdate
+from app.models.whatsapp import WhatsAppUser, WhatsAppMessage, WhatsAppThread
+from app.crud import whatsapp as whatsapp_crud
+from app.crud import flow as flow_crud
+from app.service.flow_executor import execute_flow
+from app.schemas.whatsapp import WhatsAppUserUpdate, SendMessageRequest
+from twilio.rest import Client
+from twilio.request_validator import RequestValidator
 from fastapi import Depends, HTTPException, status
 from datetime import datetime
 from uuid import UUID
 from app.schemas.whatsapp import WhatsAppMessageBase
 from app.database import get_db
 from sqlalchemy.orm import Session
+from app.auth.dependencies import get_current_user
+from app.models.user import User
 
 router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
 
 load_dotenv()
 account_sid = os.getenv("TWILIO_ACCOUNT_SID")
 auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+
+
+def validate_twilio_request(request: Request, form_data: dict) -> bool:
+    """
+    Validate that the request came from Twilio using signature validation.
+    
+    Args:
+        request: FastAPI request object
+        form_data: Dictionary of form data from the request
+        
+    Returns:
+        bool: True if signature is valid or validation is disabled, False otherwise
+    """
+    # Skip validation in development/staging if configured
+    skip_validation = os.getenv("SKIP_TWILIO_VALIDATION", "False").lower() == "true"
+    if skip_validation:
+        print("Warning: Twilio signature validation is disabled")
+        return True
+    
+    if not auth_token:
+        print("Warning: TWILIO_AUTH_TOKEN not set, cannot validate signature")
+        return False
+    
+    validator = RequestValidator(auth_token)
+    
+    # Get the signature from headers
+    signature = request.headers.get("X-Twilio-Signature", "")
+    
+    # Get the full URL
+    url = str(request.url)
+    
+    # Validate the request
+    is_valid = validator.validate(url, form_data, signature)
+    
+    if not is_valid:
+        print(f"Invalid Twilio signature for URL: {url}")
+    
+    return is_valid
 
 
 @router.post(
@@ -75,10 +119,22 @@ async def whatsapp_receive(
     Returns:
         PlainTextResponse: An XML response containing a thank you message.
     """
+    # Get form data for signature validation
+    form = await request.form()
+    form_data = dict(form)
+    
+    # Validate Twilio signature
+    if not validate_twilio_request(request, form_data):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid Twilio signature"
+        )
+    
     print(f"Received message from {From}: {Body}")
 
+    # Return proper TwiML response
     response = MessagingResponse()
-    response.message("Thanks for your message! We’ll get back to you shortly Craig.")
+    response.message("Thanks for your message! We'll get back to you shortly.")
 
     return PlainTextResponse(content=str(response), media_type="application/xml")
 
@@ -113,6 +169,13 @@ async def whatsapp_receive_with_agent(
     """
     form = await request.form()
     form_data = dict(form)
+    
+    # Validate Twilio signature
+    if not validate_twilio_request(request, form_data):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid Twilio signature"
+        )
 
     try:
         message_data = WhatsAppMessageBase(**form_data)
@@ -181,6 +244,27 @@ async def whatsapp_receive_with_agent(
         db.commit()
         db.refresh(user)
 
+    # Find or create thread for this user
+    thread = (
+        db.query(WhatsAppThread)
+        .filter(
+            WhatsAppThread.user_id == user.id,
+            WhatsAppThread.organization_id == organization.id,
+        )
+        .first()
+    )
+
+    if not thread:
+        thread = WhatsAppThread(
+            user_id=user.id,
+            organization_id=organization.id,
+            topic=f"Conversation with {user.profile_name or user.phone_number}",
+            is_active=True,
+        )
+        db.add(thread)
+        db.commit()
+        db.refresh(thread)
+
     # media = []
 
     # for i in range(NumMedia):
@@ -191,6 +275,7 @@ async def whatsapp_receive_with_agent(
 
     message = WhatsAppMessage(
         user_id=user.id,
+        thread_id=thread.id,
         content=Body,
         direction="inbound",
         timestamp=datetime.now().isoformat(),
@@ -203,9 +288,50 @@ async def whatsapp_receive_with_agent(
         # media=media,
     )
     db.add(message)
+    
+    # Update thread timestamp
+    thread.updated_at = datetime.now()
+    
     db.commit()
     db.refresh(message)
 
+    # Check if there's a matching flow for this message
+    matched_flow = flow_crud.match_flow_trigger(db, organization.id, Body)
+    
+    if matched_flow:
+        print(f"Matched flow: {matched_flow.code} - {matched_flow.name}")
+        
+        # Execute the flow
+        flow_response = execute_flow(matched_flow, Body, from_number)
+        
+        if flow_response:
+            # Send the flow response via Twilio
+            twilio_client = Client(account_sid, auth_token)
+            twilio_client.messages.create(
+                body=flow_response,
+                from_=f"whatsapp:{to_number}",
+                to=f"whatsapp:{from_number}"
+            )
+            
+            # Store the outbound response message
+            response_message = WhatsAppMessage(
+                user_id=user.id,
+                thread_id=thread.id,
+                content=flow_response,
+                direction="outbound",
+                role=WhatsAppMessage.ROLE["AGENT"],
+                timestamp=datetime.now().isoformat(),
+            )
+            db.add(response_message)
+            db.commit()
+            
+            # Return empty TwiML (message already sent)
+            response = MessagingResponse()
+            return PlainTextResponse(content=str(response), media_type="application/xml")
+    
+    # No flow matched, use the agent workflow
+    print("No flow matched, using agent workflow")
+    
     # Create a WhatsApp agent with tools
     llm_with_tools = model_with_tools()
     whatsapp_agent = WhatsAppAgent(
@@ -224,8 +350,13 @@ async def whatsapp_receive_with_agent(
     # Extract the final message from the result
     # The final_message field should be set by the generate_response node
     final_message = agent_result.get("final_message", "I'm processing your request...")
-
-    return PlainTextResponse(content=str(final_message), media_type="application/xml")
+    
+    # Return proper TwiML response
+    # Note: The agent already sends the message via Twilio API,
+    # so we return an empty TwiML response to acknowledge receipt
+    response = MessagingResponse()
+    
+    return PlainTextResponse(content=str(response), media_type="application/xml")
 
 
 @router.patch(
@@ -250,7 +381,7 @@ async def update_whatsapp_user_organization_endpoint(
         Updated WhatsApp user information
     """
     # Update the user's organization
-    updated_user = update_whatsapp_user_organization(
+    updated_user = whatsapp_crud.update_whatsapp_user_organization(
         db=db, user_id=whatsapp_user_id, organization_id=user_update.organization_id
     )
 
@@ -268,3 +399,256 @@ async def update_whatsapp_user_organization_endpoint(
         "profile_name": updated_user.profile_name,
         "message": "WhatsApp user organization updated successfully",
     }
+
+
+@router.get(
+    "/threads",
+    summary="Get all threads for an organization",
+    response_model=list,
+)
+async def get_threads(
+    organization_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get all WhatsApp threads for an organization
+    """
+    threads = whatsapp_crud.get_threads_by_organization(db, organization_id)
+    
+    result = []
+    for thread in threads:
+        # Get user info
+        user = thread.user
+        # Get last message
+        last_message = None
+        if thread.messages:
+            last_message = thread.messages[-1].content if thread.messages else None
+        
+        result.append({
+            "id": str(thread.id),
+            "code": thread.code,
+            "user_id": str(thread.user_id),
+            "organization_id": str(thread.organization_id),
+            "topic": thread.topic,
+            "is_active": thread.is_active,
+            "created_at": thread.created_at.isoformat() if thread.created_at else None,
+            "updated_at": thread.updated_at.isoformat() if thread.updated_at else None,
+            "phone_number": user.phone_number if user else None,
+            "profile_name": user.profile_name if user else None,
+            "last_message": last_message,
+        })
+    
+    return result
+
+
+@router.get(
+    "/threads/{thread_id}/messages",
+    summary="Get all messages for a thread",
+    response_model=list,
+)
+async def get_thread_messages(
+    thread_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get all messages for a specific WhatsApp thread
+    """
+    messages = whatsapp_crud.get_thread_messages(db, thread_id)
+    
+    return [
+        {
+            "id": str(msg.id),
+            "code": msg.code,
+            "user_id": str(msg.user_id),
+            "thread_id": str(msg.thread_id) if msg.thread_id else None,
+            "direction": msg.direction,
+            "role": msg.role,
+            "content": msg.content,
+            "timestamp": msg.timestamp,
+            "message_sid": msg.message_sid,
+            "profile_name": msg.profile_name,
+        }
+        for msg in messages
+    ]
+
+
+@router.get(
+    "/users",
+    summary="Get all WhatsApp users for an organization",
+    response_model=list,
+)
+async def get_whatsapp_users(
+    organization_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get all WhatsApp users for an organization
+    """
+    users = whatsapp_crud.get_whatsapp_users_by_organization(db, organization_id)
+    
+    return [
+        {
+            "id": str(user.id),
+            "code": user.code,
+            "phone_number": user.phone_number,
+            "profile_name": user.profile_name,
+            "organization_id": str(user.organization_id),
+        }
+        for user in users
+    ]
+
+
+@router.get(
+    "/stats",
+    summary="Get WhatsApp statistics for an organization",
+    response_model=dict,
+)
+async def get_stats(
+    organization_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get statistics for an organization's WhatsApp activity
+    """
+    stats = whatsapp_crud.get_organization_stats(db, organization_id)
+    return stats
+
+
+@router.get(
+    "/recent-messages",
+    summary="Get recent messages for an organization",
+    response_model=list,
+)
+async def get_recent_messages(
+    organization_id: UUID,
+    limit: int = 10,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get recent messages for an organization
+    """
+    messages = whatsapp_crud.get_recent_messages(db, organization_id, limit)
+    
+    return [
+        {
+            "id": str(msg.id),
+            "code": msg.code,
+            "content": msg.content,
+            "timestamp": msg.timestamp,
+            "direction": msg.direction,
+            "sender": msg.user.profile_name or msg.user.phone_number if msg.user else "Unknown",
+            "preview": msg.content[:100] + "..." if len(msg.content) > 100 else msg.content,
+        }
+        for msg in messages
+    ]
+
+
+@router.post(
+    "/threads/{thread_id}/send",
+    summary="Send a WhatsApp message via thread",
+    response_model=dict,
+)
+async def send_message_via_thread(
+    thread_id: UUID,
+    message_request: SendMessageRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Send a WhatsApp message to a user via their thread.
+    
+    This endpoint:
+    - Validates auth and org access
+    - Determines from_number from Organization.phone_number
+    - Resolves to_number from the thread's user.phone_number
+    - Sends via Twilio and persists an outbound WhatsAppMessage
+    - Updates WhatsAppThread.updated_at
+    """
+    # Get the thread
+    thread = db.query(WhatsAppThread).filter(WhatsAppThread.id == thread_id).first()
+    if not thread:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Thread not found"
+        )
+    
+    # Verify user has access to this thread's organization
+    if str(current_user.organization_id) != str(thread.organization_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied to this thread"
+        )
+    
+    # Get the organization to determine from_number
+    organization = db.query(Organization).filter(
+        Organization.id == thread.organization_id
+    ).first()
+    
+    if not organization or not organization.phone_number:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Organization phone number not configured"
+        )
+    
+    # Get the user to determine to_number
+    user = db.query(WhatsAppUser).filter(WhatsAppUser.id == thread.user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found for this thread"
+        )
+    
+    from_number = organization.phone_number
+    to_number = user.phone_number
+    
+    # Initialize Twilio client
+    twilio_client = Client(account_sid, auth_token)
+    
+    try:
+        # Send message via Twilio
+        twilio_message = twilio_client.messages.create(
+            body=message_request.body,
+            from_=f"whatsapp:{from_number}",
+            to=f"whatsapp:{to_number}" if not to_number.startswith("whatsapp:") else to_number
+        )
+        
+        # Persist outbound message to database
+        outbound_message = WhatsAppMessage(
+            user_id=user.id,
+            thread_id=thread.id,
+            content=message_request.body,
+            direction="outbound",
+            role=WhatsAppMessage.ROLE["AGENT"],
+            timestamp=datetime.now().isoformat(),
+            message_sid=twilio_message.sid,
+            sms_status=twilio_message.status,
+        )
+        db.add(outbound_message)
+        
+        # Update thread timestamp
+        thread.updated_at = datetime.now()
+        
+        db.commit()
+        db.refresh(outbound_message)
+        
+        return {
+            "id": str(outbound_message.id),
+            "code": outbound_message.code,
+            "message_sid": twilio_message.sid,
+            "status": twilio_message.status,
+            "content": message_request.body,
+            "timestamp": outbound_message.timestamp,
+            "thread_id": str(thread_id),
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to send message: {str(e)}"
+        )

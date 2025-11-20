@@ -30,3 +30,7 @@ class WhatsAppMessageBase(BaseModel):
 
 class WhatsAppUserUpdate(BaseModel):
     organization_id: UUID
+
+
+class SendMessageRequest(BaseModel):
+    body: str
