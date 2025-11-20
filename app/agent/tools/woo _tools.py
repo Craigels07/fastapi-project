@@ -1,6 +1,6 @@
 # app/agent/tools/woo_tools.py
 
-from langchain.tools import BaseTool
+from langchain_core.tools import BaseTool
 from app.service.woo.service import WooService
 from typing import Optional
 

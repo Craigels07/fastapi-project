@@ -167,14 +167,13 @@ WRITING GUIDELINES:
 4. Include specific details from the order
 5. Avoid templated language patterns
 6. Make it feel like a personal message from a real person
-7. Keep it concise but warm (100-150 words)
+7. Keep it concise but warm (75-100 words)
 8. Use natural language variations
 
 STRUCTURE REQUIREMENTS:
 - Personal greeting with name
 - Clear status update with context
 - Relevant next steps or information
-- Warm, professional closing
 
 Generate ONLY the message content. Do not include explanations or meta-commentary."""
 

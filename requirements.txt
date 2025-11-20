@@ -34,6 +34,7 @@ langchain-openai
 langgraph-cli
 langsmith
 langchain-postgres
+langchain-text-splitters
 
 tavily-python
 wikipedia

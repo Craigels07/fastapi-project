@@ -17,7 +17,6 @@ from app.database import get_db
 from sqlalchemy.orm import Session
 from app.agent.models import WhatsAppMessageState
 from app.models.whatsapp import WhatsAppUser, WhatsAppMessage
-from langchain.output_parsers import StructuredOutputParser, ResponseSchema
 import json
 from app.models.user import Organization
 from app.service.base import ServiceRegistry
@@ -189,21 +188,13 @@ async def parse_intent(state: WhatsAppMessageState, config: Dict[str, Any]) -> d
     if not message:
         return {**state, "messagePurpose": None, "messageDetails": {}}
 
-    # Define expected output schema
-    response_schemas = [
-        ResponseSchema(
-            name="messagePurpose",
-            description="Purpose of the user message, e.g. greeting, order query, complaint, info request, unknown",
-        ),
-        ResponseSchema(
-            name="messageDetails",
-            description="Details relevant to the message, like order ID, product name, dates",
-        ),
-    ]
-    output_parser = StructuredOutputParser.from_response_schemas(response_schemas)
-    format_instructions = output_parser.get_format_instructions()
+    # Build prompt messages for JSON output
+    format_instructions = """
+    Please respond with a JSON object containing:
+    - "messagePurpose": Purpose of the user message (e.g. greeting, order query, complaint, info request, unknown)
+    - "messageDetails": Details relevant to the message, like order ID, product name, dates
+    """
 
-    # Build prompt messages
     system_message = SystemMessage(
         content="I need to understand the user's message to provide the right assistance. Please identify the purpose of the message and any specific details mentioned, such as order IDs, product names, or dates."
     )
@@ -216,7 +207,8 @@ async def parse_intent(state: WhatsAppMessageState, config: Dict[str, Any]) -> d
 
     # Parse output
     try:
-        parsed = output_parser.parse(response.generations[0][0].text)
+        response_text = response.generations[0][0].text
+        parsed = json.loads(response_text)
         messagePurpose = parsed.get("messagePurpose")
         messageDetails = parsed.get("messageDetails", {})
     except json.JSONDecodeError:
