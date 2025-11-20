@@ -5,13 +5,13 @@ from app.service.woo.service import WooService
 from typing import Optional
 
 # Assuming WooService is already instantiated elsewhere and injected here
-# woo_service = WooService(woo_client)
+# woo_service = WooService(woo_client) 
 
 
 class WooCommerceOrderStatusTool(BaseTool):
     name = "get_order_status"
     description = (
-        "Get the status of a WooCommerce order by order ID or customer phone number."
+        "Get the status of a WooCommerce order by order ID or customer phone number.."
     )
 
     def __init__(self, woo_service: WooService):
