@@ -8,6 +8,7 @@ from app.routers import (
     services,
     service_credentials,
     woo_monitor,
+    flow,
 )
 from app.auth.router import router as auth_router
 import uvicorn
@@ -57,6 +58,7 @@ app.include_router(services.router)
 app.include_router(documents.router)
 app.include_router(whatsapp.router)
 app.include_router(woo_monitor.router)
+app.include_router(flow.router)
 
 if ENVIRONMENT == "development":
     from app.service.ngrok.service import start_ngrok_tunnel
