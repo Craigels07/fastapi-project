@@ -131,16 +131,29 @@ def read_user(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> User:
-    """Get user by ID - users can only view themselves unless admin"""
-    # Regular users can only view their own profile
-    if current_user.role != "admin" and current_user.id != user_id:
-        raise HTTPException(
-            status_code=403, detail="Not authorized to access this user"
-        )
-
+    """Get user by ID - super_admin can view any user, org_admin can view users in their org, users can view themselves"""
     db_user = get_user(db, user_id)
     if db_user is None:
         raise HTTPException(status_code=404, detail="User not found")
+    
+    # Super admin can view any user
+    if current_user.role == "super_admin":
+        return db_user
+    
+    # Org admin can view users in their organization
+    if current_user.role == "org_admin":
+        if db_user.organization_id != current_user.organization_id:
+            raise HTTPException(
+                status_code=403, detail="Not authorized to access this user"
+            )
+        return db_user
+    
+    # Regular users can only view their own profile
+    if current_user.id != user_id:
+        raise HTTPException(
+            status_code=403, detail="Not authorized to access this user"
+        )
+    
     return db_user
 
 
@@ -179,17 +192,48 @@ def update_user_endpoint(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> User:
-    """Update user - users can only update themselves unless admin"""
-    # Regular users can only update their own profile
-    if current_user.role != "admin" and current_user.id != user_id:
+    """Update user - super_admin can update any user, org_admin can update users in their org, users can update themselves"""
+    db_user = get_user(db, user_id)
+    if db_user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Super admin can update any user
+    if current_user.role == "super_admin":
+        # Super admin can change roles and organizations freely
+        updated_user = update_user(db, user_id, user)
+        return updated_user
+    
+    # Org admin can update users in their organization
+    if current_user.role == "org_admin":
+        if db_user.organization_id != current_user.organization_id:
+            raise HTTPException(
+                status_code=403, detail="Not authorized to update this user"
+            )
+        # Org admin cannot change organization_id or promote to super_admin
+        if user.organization_id and user.organization_id != current_user.organization_id:
+            raise HTTPException(
+                status_code=403, detail="Cannot move users to other organizations"
+            )
+        if user.role == "super_admin":
+            raise HTTPException(
+                status_code=403, detail="Cannot promote users to super_admin"
+            )
+        updated_user = update_user(db, user_id, user)
+        return updated_user
+    
+    # Regular users can only update their own profile (limited fields)
+    if current_user.id != user_id:
         raise HTTPException(
             status_code=403, detail="Not authorized to update this user"
         )
-
-    db_user = update_user(db, user_id, user)
-    if db_user is None:
-        raise HTTPException(status_code=404, detail="User not found")
-    return db_user
+    # Regular users cannot change their role or organization
+    if user.role or user.organization_id:
+        raise HTTPException(
+            status_code=403, detail="Cannot change role or organization"
+        )
+    
+    updated_user = update_user(db, user_id, user)
+    return updated_user
 
 
 @router.delete("/{user_id}")

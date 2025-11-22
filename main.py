@@ -4,6 +4,9 @@ from app.routers import (
     documents,
     user,
     whatsapp,
+    whatsapp_auth,
+    whatsapp_webhooks,
+    whatsapp_phone_numbers,
     organization,
     services,
     service_credentials,
@@ -57,6 +60,9 @@ app.include_router(service_credentials.router)
 app.include_router(services.router)
 app.include_router(documents.router)
 app.include_router(whatsapp.router)
+app.include_router(whatsapp_auth.router)  # WhatsApp Tech Provider auth
+app.include_router(whatsapp_phone_numbers.router)  # WhatsApp phone number management
+app.include_router(whatsapp_webhooks.router)  # WhatsApp webhooks
 app.include_router(woo_monitor.router)
 app.include_router(flow.router)
 

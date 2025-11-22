@@ -114,3 +114,20 @@ def has_role(required_roles: list):
         return current_user
 
     return role_checker
+
+
+def is_super_admin(user: User) -> bool:
+    """
+    Check if a user has super_admin role
+    
+    Super admins have unrestricted access to all organizations, users, and resources.
+    This is the highest privilege level and should only be assigned to product owners
+    or system administrators.
+    
+    Args:
+        user: The user to check
+        
+    Returns:
+        True if user is a super_admin, False otherwise
+    """
+    return user.role == "super_admin"

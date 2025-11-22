@@ -33,9 +33,8 @@ class WhatsAppUser(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     code = Column(String, unique=True, index=True, nullable=False)
-    account_sid = Column(String, nullable=True)
-    phone_number = Column(String, unique=True, nullable=False)
-    profile_name = Column(String, nullable=True)
+    phone_number = Column(String, unique=True, nullable=False)  # End user's phone number
+    profile_name = Column(String, nullable=True)  # End user's WhatsApp profile name
     user_metadata = Column(JSON, nullable=True)
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"))
 

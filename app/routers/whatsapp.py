@@ -8,12 +8,15 @@ from fastapi.responses import JSONResponse
 from app.agent.whatsapp_agent import WhatsAppAgent
 from app.models.user import Organization
 from app.models.whatsapp import WhatsAppUser, WhatsAppMessage, WhatsAppThread
+from app.models.whatsapp_account import WhatsAppAccount
+from app.models.whatsapp_phone_number import WhatsAppPhoneNumber
 from app.crud import whatsapp as whatsapp_crud
 from app.crud import flow as flow_crud
 from app.service.flow_executor import execute_flow
 from app.schemas.whatsapp import WhatsAppUserUpdate, SendMessageRequest
 from twilio.rest import Client
 from twilio.request_validator import RequestValidator
+from cryptography.fernet import Fernet
 from fastapi import Depends, HTTPException, status
 from datetime import datetime
 from uuid import UUID
@@ -28,6 +31,15 @@ router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
 load_dotenv()
 account_sid = os.getenv("TWILIO_ACCOUNT_SID")
 auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+
+# Encryption for decrypting stored tokens
+ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY", Fernet.generate_key())
+cipher_suite = Fernet(ENCRYPTION_KEY)
+
+
+def decrypt_token(encrypted_token: str) -> str:
+    """Decrypt a stored token"""
+    return cipher_suite.decrypt(encrypted_token.encode()).decode()
 
 
 def validate_twilio_request(request: Request, form_data: dict) -> bool:
@@ -218,6 +230,23 @@ async def whatsapp_receive_with_agent(
     print("organization id:", organization.id)
     if not organization:
         raise HTTPException(status_code=400, detail="Unknown organization")
+    
+    # Find phone number record (supports multiple numbers per organization)
+    phone_number_record = db.query(WhatsAppPhoneNumber).filter(
+        WhatsAppPhoneNumber.phone_number == to_number
+    ).first()
+    
+    # Determine which credentials to use
+    if phone_number_record:
+        # Use subaccount credentials from phone number's account
+        org_account_sid = phone_number_record.account.twilio_subaccount_sid
+        org_auth_token = decrypt_token(phone_number_record.account.twilio_auth_token)
+        print(f"Using subaccount {org_account_sid} for {organization.name} via {phone_number_record.code}")
+    else:
+        # Fallback to main account for backward compatibility
+        org_account_sid = account_sid
+        org_auth_token = auth_token
+        print(f"Using main account for organization {organization.name} (legacy mode)")
 
     whatsapp_dict = {}
     for key, value in form.items():
@@ -238,7 +267,6 @@ async def whatsapp_receive_with_agent(
             phone_number=from_number,
             organization_id=organization.id,
             profile_name=message_data.ProfileName,
-            account_sid=whatsapp_dict["AccountSid"],
         )
         db.add(user)
         db.commit()
@@ -332,11 +360,11 @@ async def whatsapp_receive_with_agent(
     # No flow matched, use the agent workflow
     print("No flow matched, using agent workflow")
     
-    # Create a WhatsApp agent with tools
+    # Create a WhatsApp agent with tools using organization's credentials
     llm_with_tools = model_with_tools()
     whatsapp_agent = WhatsAppAgent(
-        account_sid,
-        auth_token,
+        account_sid=org_account_sid,
+        auth_token=org_auth_token,
         model=llm_with_tools,
         organization_id=organization.id,
         to_number=to_number,
@@ -347,13 +375,8 @@ async def whatsapp_receive_with_agent(
         user_input=Body, whatsapp_message_id=message.id, user_phone_number=from_number
     )
 
-    # Extract the final message from the result
-    # The final_message field should be set by the generate_response node
     final_message = agent_result.get("final_message", "I'm processing your request...")
-    
-    # Return proper TwiML response
-    # Note: The agent already sends the message via Twilio API,
-    # so we return an empty TwiML response to acknowledge receipt
+
     response = MessagingResponse()
     
     return PlainTextResponse(content=str(response), media_type="application/xml")

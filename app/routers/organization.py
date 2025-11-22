@@ -44,12 +44,12 @@ class WooCommerceCredentials(BaseModel):
 async def create_new_organization(
     organization: OrganizationCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(has_role(["admin", "super_admin"])),
+    current_user: User = Depends(has_role(["super_admin"])),
 ):
     """
     Create a new organization
 
-    Requires admin role
+    Requires super_admin role - only system administrators can create organizations
     """
     return create_organization(db, organization)
 
@@ -80,12 +80,12 @@ async def get_organization_by_id(
 async def get_organization_by_phone_number(
     phone_number: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(has_role(["admin", "super_admin"])),
+    current_user: User = Depends(has_role(["super_admin"])),
 ):
     """
     Get an organization by phone number
 
-    Requires admin role
+    Requires super_admin role
     """
     db_organization = get_organization_by_phone(db, phone_number)
     if db_organization is None:
@@ -100,12 +100,12 @@ async def list_organizations(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
-    current_user: User = Depends(has_role(["admin", "super_admin"])),
+    current_user: User = Depends(has_role(["super_admin"])),
 ):
     """
     Get a list of all organizations with pagination
 
-    Requires admin role
+    Requires super_admin role
     """
     return get_organizations(db, skip=skip, limit=limit)
 
@@ -136,12 +136,12 @@ async def update_organization_endpoint(
 async def delete_organization_endpoint(
     organization_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(has_role(["admin", "super_admin"])),
+    current_user: User = Depends(has_role(["super_admin"])),
 ):
     """
     Delete an organization
 
-    Requires admin role
+    Requires super_admin role
     """
     if not delete_organization(db, organization_id):
         raise HTTPException(
