@@ -36,8 +36,16 @@ def verify_password(plain_password, hashed_password):
 def get_password_hash(password):
     """
     Hash a password for storage
+    Truncates to 72 bytes to comply with bcrypt's limit
     """
-    return pwd_context.hash(password)
+    # Convert to bytes and truncate to 72 bytes (bcrypt limit)
+    pw_bytes = password.encode("utf-8") if isinstance(password, str) else password
+    truncated_pw_bytes = pw_bytes[:72]
+    
+    # Use bcrypt directly to avoid passlib's internal initialization issues
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(truncated_pw_bytes, salt)
+    return hashed.decode("utf-8")
 
 
 def authenticate_user(db: Session, email: str, password: str) -> Optional[User]:

@@ -51,7 +51,16 @@ class WhatsAppAccount(Base):
     meta_business_portfolio_id = Column(String, nullable=True)
     
     # Status tracking
-    status = Column(Enum(AccountStatus), default=AccountStatus.PENDING, nullable=False)
+    status = Column(
+        Enum(
+            AccountStatus,
+            name="accountstatus",
+            native_enum=True,
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
+        default=AccountStatus.PENDING,
+        nullable=False,
+    )
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

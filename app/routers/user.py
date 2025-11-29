@@ -6,7 +6,7 @@ from app.models.user import User
 from app.schemas.user import UserCreate, UserResponse, UserUpdate
 from app.crud.user import create_user, get_user, get_users, update_user, delete_user
 from app.auth.dependencies import get_current_active_user
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -29,12 +29,22 @@ class InitialSetupRequest(BaseModel):
     admin_name: str
     admin_phone: Optional[str] = None
 
+    @field_validator('admin_password')
+    @classmethod
+    def validate_password_length(cls, v: str) -> str:
+        """Validate password doesn't exceed bcrypt's 72-byte limit"""
+        if len(v.encode('utf-8')) > 72:
+            raise ValueError('Password cannot exceed 72 bytes when UTF-8 encoded')
+        return v
+
 
 @router.post("/bootstrap", response_model=UserResponse)
 def bootstrap_system(setup_data: InitialSetupRequest, db: Session = Depends(get_db)):
-    """Bootstrap the system with the first organization and super_admin user
+    """Bootstrap the system with the first organization and org_admin user
 
-    This endpoint creates the first organization and super_admin user if they don't exist.
+    This endpoint creates the first organization and org_admin user if they don't exist.
+    The first user of an organization is automatically assigned the org_admin role.
+    Only internal staff should be assigned the super_admin role manually.
     """
     # Import here to avoid circular imports
     from app.crud.organization import create_organization, get_organization_by_email
@@ -80,13 +90,15 @@ def bootstrap_system(setup_data: InitialSetupRequest, db: Session = Depends(get_
     if existing_user:
         return existing_user
 
-    # Create the super_admin user with all provided details
+    # Create the org_admin user with all provided details
+    # First user of an organization is always an org_admin
+    # Only internal staff should have super_admin role
     user_data = UserCreate(
         email=setup_data.admin_email,
         password=setup_data.admin_password,
         name=setup_data.admin_name,
         phone_number=setup_data.admin_phone,
-        role="super_admin",
+        role="org_admin",
         organization_id=new_org.id,
         status="active",
         # No need to specify code - it will be auto-generated

@@ -49,6 +49,32 @@ class TwilioTechProviderService:
         except TwilioRestException as e:
             raise Exception(f"Failed to create Twilio subaccount: {e.msg}")
 
+    async def create_or_reuse_subaccount(self, customer_name: str) -> Dict[str, str]:
+        try:
+            return await self.create_subaccount(customer_name)
+        except Exception as e:
+            msg = str(e).lower()
+            if "maximum number of subaccounts" in msg:
+                try:
+                    existing = self.client.api.accounts.list(friendly_name=customer_name, limit=20)
+                except TwilioRestException:
+                    existing = self.client.api.accounts.list(limit=1000)
+                    existing = [a for a in existing if a.friendly_name == customer_name]
+                if existing:
+                    account = self.client.api.accounts(existing[0].sid).fetch()
+                    if getattr(account, "status", None) == "suspended":
+                        account = self.client.api.accounts(account.sid).update(status="active")
+                    return {
+                        "account_sid": account.sid,
+                        "auth_token": account.auth_token,
+                        "friendly_name": account.friendly_name,
+                        "status": account.status,
+                    }
+                raise Exception(
+                    "Twilio subaccount limit reached and no reusable subaccount found. Please delete or reactivate an existing subaccount, or request a limit increase from Twilio."
+                )
+            raise
+
     async def register_whatsapp_sender(
         self,
         subaccount_sid: str,

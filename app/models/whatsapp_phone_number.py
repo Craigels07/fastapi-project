@@ -58,7 +58,16 @@ class WhatsAppPhoneNumber(Base):
     status_callback_url = Column(String, nullable=True)
     
     # Status and flags
-    status = Column(Enum(PhoneNumberStatus), default=PhoneNumberStatus.PENDING, nullable=False)
+    status = Column(
+        Enum(
+            PhoneNumberStatus,
+            name="phonenumberstatus",
+            native_enum=True,
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
+        default=PhoneNumberStatus.PENDING,
+        nullable=False,
+    )
     is_primary = Column(Boolean, default=False, nullable=False)  # Primary number for organization
     
     # Timestamps

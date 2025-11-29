@@ -101,18 +101,35 @@ async def start_onboarding(
                 detail="Organization already has an active WhatsApp account. Please disconnect first."
             )
         
-        # Create Twilio subaccount
-        twilio_service = TwilioTechProviderService()
-        subaccount = await twilio_service.create_subaccount(
-            customer_name=f"{organization.name} - WhatsApp"
-        )
+        default_sid = os.getenv("TWILIO_DEFAULT_SUBACCOUNT_SID")
+        default_token = os.getenv("TWILIO_DEFAULT_SUBACCOUNT_AUTH_TOKEN")
+        if default_sid and default_token:
+            subaccount = {
+                "account_sid": default_sid,
+                "auth_token": default_token,
+                "friendly_name": f"{organization.name} - WhatsApp",
+                "status": "active",
+            }
+        else:
+            twilio_service = TwilioTechProviderService()
+            subaccount = await twilio_service.create_or_reuse_subaccount(
+                customer_name=f"{organization.name} - WhatsApp"
+            )
+        if not subaccount.get("auth_token"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Twilio returned no subaccount auth token. Set TWILIO_DEFAULT_SUBACCOUNT_SID and "
+                    "TWILIO_DEFAULT_SUBACCOUNT_AUTH_TOKEN to reuse an existing subaccount, or delete unused "
+                    "subaccounts and retry."
+                ),
+            )
         
         # Create WhatsApp account record
         whatsapp_account = WhatsAppAccount(
             organization_id=organization.id,
             twilio_subaccount_sid=subaccount["account_sid"],
             twilio_auth_token=encrypt_token(subaccount["auth_token"]),
-            phone_number=request.phone_number,
             status=AccountStatus.PENDING
         )
         
@@ -135,10 +152,19 @@ async def start_onboarding(
         )
     
     except Exception as e:
-        logger.error(f"Failed to start onboarding: {str(e)}")
+        msg = str(e)
+        logger.error(f"Failed to start onboarding: {msg}")
+        if "maximum number of subaccounts" in msg.lower() or "subaccount limit" in msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Twilio subaccount limit reached. Please delete or reactivate an existing subaccount, "
+                    "or request a limit increase from Twilio."
+                ),
+            )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to start onboarding: {str(e)}"
+            detail=f"Failed to start onboarding: {msg}"
         )
 
 
@@ -167,12 +193,11 @@ async def complete_embedded_signup(
                 detail="User must belong to an organization"
             )
         
-        # Find pending account
+        # Find pending account (most recent one for this organization)
         account = db.query(WhatsAppAccount).filter(
             WhatsAppAccount.organization_id == organization.id,
-            WhatsAppAccount.phone_number == callback.phone_number,
             WhatsAppAccount.status == AccountStatus.PENDING
-        ).first()
+        ).order_by(WhatsAppAccount.created_at.desc()).first()
         
         if not account:
             raise HTTPException(
@@ -265,7 +290,7 @@ async def get_whatsapp_status(
     primary_phone = account.get_primary_phone_number()
     
     return WhatsAppStatusResponse(
-        connected=account.status == AccountStatus.ACTIVE,
+        connected=account.status == AccountStatus.ACTIVE.value,
         phone_number=primary_phone.phone_number if primary_phone else None,
         display_name=primary_phone.display_name if primary_phone else None,
         waba_id=account.waba_id,
