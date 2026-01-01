@@ -37,6 +37,10 @@ class WhatsAppUser(Base):
     profile_name = Column(String, nullable=True)  # End user's WhatsApp profile name
     user_metadata = Column(JSON, nullable=True)
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"))
+    
+    # Opt-Out Management (CRITICAL for compliance)
+    opted_out = Column(Boolean, default=False, nullable=False)  # Default: False
+    opted_out_at = Column(DateTime, nullable=True)  # When user opted out
 
     messages = relationship("WhatsAppMessage", back_populates="user")
     threads = relationship("WhatsAppThread", back_populates="user")
@@ -120,6 +124,9 @@ class WhatsAppThread(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    
+    # 24-Hour Window Tracking (CRITICAL for compliance)
+    last_user_message_at = Column(DateTime, nullable=True)  # Last inbound message timestamp
 
     user = relationship("WhatsAppUser", back_populates="threads")
     messages = relationship("WhatsAppMessage", back_populates="thread")

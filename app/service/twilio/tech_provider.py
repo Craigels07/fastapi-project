@@ -49,6 +49,45 @@ class TwilioTechProviderService:
         except TwilioRestException as e:
             raise Exception(f"Failed to create Twilio subaccount: {e.msg}")
 
+    async def create_messaging_service(
+        self,
+        subaccount_sid: str,
+        subaccount_token: str,
+        friendly_name: str
+    ) -> Dict[str, str]:
+        """
+        Create a Messaging Service for a subaccount.
+        REQUIRED: One Messaging Service per subaccount for WhatsApp.
+        
+        Args:
+            subaccount_sid: Twilio subaccount SID
+            subaccount_token: Twilio subaccount auth token
+            friendly_name: Friendly name for the messaging service
+            
+        Returns:
+            Dictionary containing messaging_service_sid and friendly_name
+            
+        Raises:
+            TwilioRestException: If messaging service creation fails
+        """
+        try:
+            sub_client = Client(subaccount_sid, subaccount_token)
+            
+            # Create messaging service with UseInboundWebhookOnNumber=true
+            # This allows per-number webhook configuration
+            messaging_service = sub_client.messaging.v1.services.create(
+                friendly_name=friendly_name,
+                use_inbound_webhook_on_number=True
+            )
+            
+            return {
+                "messaging_service_sid": messaging_service.sid,
+                "friendly_name": messaging_service.friendly_name,
+                "status": "active"
+            }
+        except TwilioRestException as e:
+            raise Exception(f"Failed to create messaging service: {e.msg}")
+
     async def create_or_reuse_subaccount(self, customer_name: str) -> Dict[str, str]:
         try:
             return await self.create_subaccount(customer_name)
@@ -84,10 +123,12 @@ class TwilioTechProviderService:
         display_name: str,
         callback_url: str,
         status_callback_url: str,
+        messaging_service_sid: str,
         fallback_url: Optional[str] = None
     ) -> Dict[str, str]:
         """
         Register a WhatsApp sender using the Twilio Senders API.
+        MUST attach to a Messaging Service (REQUIRED for compliance).
         
         Args:
             subaccount_sid: Twilio subaccount SID
@@ -97,6 +138,7 @@ class TwilioTechProviderService:
             display_name: Display name for the WhatsApp profile
             callback_url: URL for inbound message webhooks
             status_callback_url: URL for message status webhooks
+            messaging_service_sid: REQUIRED - Messaging Service SID to attach sender to
             fallback_url: Optional fallback URL
             
         Returns:
@@ -131,9 +173,10 @@ class TwilioTechProviderService:
                 configuration["fallback_url"] = fallback_url
                 configuration["fallback_method"] = "POST"
             
-            # Create the sender
+            # Create the sender and attach to Messaging Service (REQUIRED)
             sender = sub_client.messaging.v2.channels.senders.create(
                 sender_id=sender_id,
+                messaging_service_sid=messaging_service_sid,
                 configuration=configuration
             )
             
@@ -141,7 +184,7 @@ class TwilioTechProviderService:
                 "sender_sid": sender.sid,
                 "sender_id": sender.sender_id,
                 "status": sender.status,
-                "messaging_service_sid": getattr(sender, "messaging_service_sid", None)
+                "messaging_service_sid": messaging_service_sid
             }
         except TwilioRestException as e:
             raise Exception(f"Failed to register WhatsApp sender: {e.msg}")

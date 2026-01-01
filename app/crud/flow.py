@@ -121,20 +121,38 @@ def match_flow_trigger(
     """
     Match an incoming message to a flow trigger.
     Returns the first matching active flow.
+    Supports: keyword triggers, incoming message triggers (with exclude keywords).
     """
     active_flows = get_active_flows_by_organization(db, organization_id)
     
     message_lower = message_text.lower().strip()
     
+    # Priority 1: Keyword triggers (specific matches)
     for flow in active_flows:
-        # Match keyword triggers
         if flow.trigger_type == "keyword" and flow.trigger_keywords:
             for keyword in flow.trigger_keywords:
                 if keyword.lower() in message_lower:
                     return flow
-        
-        # Match any_message triggers (lowest priority)
-        elif flow.trigger_type == "any_message":
-            return flow
+    
+    # Priority 2: Incoming message triggers (catch-all with optional exclusions)
+    for flow in active_flows:
+        if flow.trigger_type == "any_message":
+            # Check if flow has nodes with incoming message trigger
+            for node in flow.nodes:
+                node_type = node.get("data", {}).get("nodeType") or node.get("type")
+                if node_type == "trigger-incoming-message":
+                    # Check exclude keywords
+                    filters = node.get("data", {}).get("filters", {})
+                    exclude_keywords = filters.get("excludeKeywords", [])
+                    
+                    # If message contains any exclude keyword, skip this flow
+                    should_exclude = False
+                    for exclude_kw in exclude_keywords:
+                        if exclude_kw and exclude_kw.lower() in message_lower:
+                            should_exclude = True
+                            break
+                    
+                    if not should_exclude:
+                        return flow
     
     return None
