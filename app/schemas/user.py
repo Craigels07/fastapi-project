@@ -20,7 +20,6 @@ class OrganizationRead(OrganizationCreate):
     id: UUID
 
     class Config:
-        orm_mode = True
         from_attributes = True
 
 
@@ -34,7 +33,6 @@ class Organization(BaseModel):
     users: Optional[List["UserResponse"]] = None
 
     class Config:
-        orm_mode = True
         from_attributes = True
 
 
@@ -87,5 +85,4 @@ class UserResponse(BaseModel):
     user_metadata: Optional[str] = None
 
     class Config:
-        orm_mode = True
         from_attributes = True

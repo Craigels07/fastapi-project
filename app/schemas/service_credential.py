@@ -29,7 +29,7 @@ class ServiceCredentialResponse(ServiceCredentialBase):
     organization_id: UUID
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # For specific service types, we can create type-specific schemas

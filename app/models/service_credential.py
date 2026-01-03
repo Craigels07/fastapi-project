@@ -33,5 +33,3 @@ class ServiceCredential(Base):
     # Relationships
     organization = relationship("Organization", back_populates="service_credentials")
 
-    class Config:
-        orm_mode = True
