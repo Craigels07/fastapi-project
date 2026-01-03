@@ -24,7 +24,7 @@ class FlowExecutor:
     This is a simple implementation that processes trigger and response nodes.
     """
 
-    def __init__(self, flow: Flow, organization_phone: str = None, db_session=None, thread: WhatsAppThread = None, user: WhatsAppUser = None):
+    def __init__(self, flow: Flow, organization_phone: str = None, db_session=None, thread: WhatsAppThread = None, user: WhatsAppUser = None, messaging_service_sid: str = None):
         self.flow = flow
         self.nodes = {node["id"]: node for node in flow.nodes}
         self.edges = flow.edges
@@ -32,6 +32,7 @@ class FlowExecutor:
         self.db_session = db_session
         self.thread = thread
         self.user = user
+        self.messaging_service_sid = messaging_service_sid
 
     def execute(self, context: Dict[str, Any], send_whatsapp: bool = False) -> Optional[str]:
         """
@@ -163,13 +164,23 @@ class FlowExecutor:
                             if button_text:
                                 final_message += f"{i}. {button_text}\n"
                     
-                    # Send the message via Twilio
-                    twilio_client.messages.create(
-                        body=final_message,
-                        from_=f"whatsapp:{org_phone}",
-                        to=f"whatsapp:{user_phone}" if not user_phone.startswith("whatsapp:") else user_phone
-                    )
-                    print(f"WhatsApp message sent to {user_phone}: {final_message[:50]}...")
+                    # CRITICAL: Send via Messaging Service (REQUIRED for compliance)
+                    if self.messaging_service_sid:
+                        twilio_client.messages.create(
+                            messaging_service_sid=self.messaging_service_sid,
+                            to=f"whatsapp:{user_phone}" if not user_phone.startswith("whatsapp:") else user_phone,
+                            body=final_message
+                        )
+                        print(f"WhatsApp message sent via Messaging Service to {user_phone}: {final_message[:50]}...")
+                    else:
+                        # Fallback to from_ parameter (legacy/non-compliant)
+                        print(f"WARNING: No messaging_service_sid provided, using legacy from_ parameter")
+                        twilio_client.messages.create(
+                            body=final_message,
+                            from_=f"whatsapp:{org_phone}",
+                            to=f"whatsapp:{user_phone}" if not user_phone.startswith("whatsapp:") else user_phone
+                        )
+                        print(f"WhatsApp message sent to {user_phone}: {final_message[:50]}...")
                 except Exception as e:
                     print(f"Error sending WhatsApp message: {e}")
         

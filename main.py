@@ -12,6 +12,7 @@ from app.routers import (
     service_credentials,
     woo_monitor,
     flow,
+    flow_builder,
 )
 from app.auth.router import router as auth_router
 import uvicorn
@@ -65,6 +66,7 @@ app.include_router(whatsapp_phone_numbers.router)  # WhatsApp phone number manag
 app.include_router(whatsapp_webhooks.router)  # WhatsApp webhooks
 app.include_router(woo_monitor.router)
 app.include_router(flow.router)
+app.include_router(flow_builder.router)  # Flow builder configuration endpoints
 
 if ENVIRONMENT == "development":
     from app.service.ngrok.service import start_ngrok_tunnel

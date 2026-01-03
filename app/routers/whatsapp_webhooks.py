@@ -145,24 +145,44 @@ async def whatsapp_inbound_webhook(request: Request, db: Session = Depends(get_d
             
             if opt_out_result["action"] == "opt_out":
                 logger.info(f"User {from_number} opted out")
-                # Send confirmation message
+                # Send confirmation message via Messaging Service (REQUIRED for compliance)
                 client = Client(org_account_sid, org_auth_token)
-                client.messages.create(
-                    body="You have been unsubscribed and will not receive further messages. Reply START to opt back in.",
-                    from_=f"whatsapp:{to_number}",
-                    to=f"whatsapp:{from_number}"
-                )
+                messaging_service_sid = phone_number_record.messaging_service_sid if phone_number_record else None
+                
+                if messaging_service_sid:
+                    client.messages.create(
+                        messaging_service_sid=messaging_service_sid,
+                        to=f"whatsapp:{from_number}",
+                        body="You have been unsubscribed and will not receive further messages. Reply START to opt back in."
+                    )
+                else:
+                    # Fallback for legacy accounts without Messaging Service
+                    client.messages.create(
+                        body="You have been unsubscribed and will not receive further messages. Reply START to opt back in.",
+                        from_=f"whatsapp:{to_number}",
+                        to=f"whatsapp:{from_number}"
+                    )
                 return {"status": "received", "action": "opted_out"}
             
             if opt_out_result["action"] == "opt_in":
                 logger.info(f"User {from_number} opted back in")
-                # Send confirmation message
+                # Send confirmation message via Messaging Service (REQUIRED for compliance)
                 client = Client(org_account_sid, org_auth_token)
-                client.messages.create(
-                    body="You have been re-subscribed and will receive messages again.",
-                    from_=f"whatsapp:{to_number}",
-                    to=f"whatsapp:{from_number}"
-                )
+                messaging_service_sid = phone_number_record.messaging_service_sid if phone_number_record else None
+                
+                if messaging_service_sid:
+                    client.messages.create(
+                        messaging_service_sid=messaging_service_sid,
+                        to=f"whatsapp:{from_number}",
+                        body="You have been re-subscribed and will receive messages again."
+                    )
+                else:
+                    # Fallback for legacy accounts without Messaging Service
+                    client.messages.create(
+                        body="You have been re-subscribed and will receive messages again.",
+                        from_=f"whatsapp:{to_number}",
+                        to=f"whatsapp:{from_number}"
+                    )
                 return {"status": "received", "action": "opted_in"}
         
         except Exception as e:
@@ -222,12 +242,14 @@ async def whatsapp_inbound_webhook(request: Request, db: Session = Depends(get_d
             
             # Execute the flow with WhatsApp sending enabled and compliance enforcement
             from app.service.flow_executor import FlowExecutor
+            messaging_service_sid = phone_number_record.messaging_service_sid if phone_number_record else None
             executor = FlowExecutor(
                 flow=matched_flow,
                 organization_phone=to_number,
                 db_session=db,
                 thread=active_thread,
-                user=whatsapp_user
+                user=whatsapp_user,
+                messaging_service_sid=messaging_service_sid
             )
             context = {
                 "user_input": body,
