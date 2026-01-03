@@ -12,6 +12,8 @@ from app.routers import (
     service_credentials,
     woo_monitor,
     flow,
+    flow_builder,
+    admin,
 )
 from app.auth.router import router as auth_router
 import uvicorn
@@ -65,6 +67,8 @@ app.include_router(whatsapp_phone_numbers.router)  # WhatsApp phone number manag
 app.include_router(whatsapp_webhooks.router)  # WhatsApp webhooks
 app.include_router(woo_monitor.router)
 app.include_router(flow.router)
+app.include_router(flow_builder.router)  # Flow builder configuration endpoints
+app.include_router(admin.router)  # Admin panel for super admins
 
 if ENVIRONMENT == "development":
     from app.service.ngrok.service import start_ngrok_tunnel

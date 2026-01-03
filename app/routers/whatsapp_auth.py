@@ -14,6 +14,7 @@ from app.models.user import User
 from app.models.whatsapp_account import WhatsAppAccount, AccountStatus
 from app.models.whatsapp_phone_number import WhatsAppPhoneNumber, PhoneNumberStatus
 from app.service.twilio.tech_provider import TwilioTechProviderService
+from app.service.meta.graph_api import MetaGraphAPIService
 from app.auth.dependencies import get_current_user
 from cryptography.fernet import Fernet
 import logging
@@ -125,11 +126,22 @@ async def start_onboarding(
                 ),
             )
         
-        # Create WhatsApp account record
+        # CRITICAL: Create Messaging Service for subaccount (REQUIRED for compliance)
+        twilio_service = TwilioTechProviderService()
+        messaging_service = await twilio_service.create_messaging_service(
+            subaccount_sid=subaccount["account_sid"],
+            subaccount_token=subaccount["auth_token"],
+            friendly_name=f"{organization.name} WhatsApp Service"
+        )
+        
+        logger.info(f"Created Messaging Service {messaging_service['messaging_service_sid']} for {organization.name}")
+        
+        # Create WhatsApp account record with messaging_service_sid
         whatsapp_account = WhatsAppAccount(
             organization_id=organization.id,
             twilio_subaccount_sid=subaccount["account_sid"],
             twilio_auth_token=encrypt_token(subaccount["auth_token"]),
+            messaging_service_sid=messaging_service["messaging_service_sid"],
             status=AccountStatus.PENDING
         )
         
@@ -205,11 +217,33 @@ async def complete_embedded_signup(
                 detail="Onboarding session not found. Please start onboarding again."
             )
         
+        # CRITICAL: Verify WABA before registration (REQUIRED for compliance)
+        meta_service = MetaGraphAPIService()
+        try:
+            waba_verification = await meta_service.verify_waba(callback.waba_id)
+            logger.info(f"WABA {callback.waba_id} verified: {waba_verification['business_verification_status']}")
+        except Exception as e:
+            logger.error(f"WABA verification failed: {str(e)}")
+            account.status = AccountStatus.FAILED
+            db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"WABA verification failed: {str(e)}"
+            )
+        
         # Update account with WABA information
         account.waba_id = callback.waba_id
+        account.waba_verification_status = waba_verification["business_verification_status"]
         account.meta_business_portfolio_id = callback.business_portfolio_id
         
-        # Register sender with Twilio
+        # Ensure messaging service exists
+        if not account.messaging_service_sid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Messaging Service not found. Please restart onboarding."
+            )
+        
+        # Register sender with Twilio (MUST attach to Messaging Service)
         twilio_service = TwilioTechProviderService()
         
         # Get backend URL for webhooks
@@ -222,7 +256,8 @@ async def complete_embedded_signup(
             waba_id=callback.waba_id,
             display_name=current_user.name or current_user.email,
             callback_url=f"{backend_url}/webhooks/whatsapp/inbound",
-            status_callback_url=f"{backend_url}/webhooks/whatsapp/status"
+            status_callback_url=f"{backend_url}/webhooks/whatsapp/status",
+            messaging_service_sid=account.messaging_service_sid
         )
         
         # Create phone number record (first number for this account)

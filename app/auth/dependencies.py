@@ -116,18 +116,26 @@ def has_role(required_roles: list):
     return role_checker
 
 
-def is_super_admin(user: User) -> bool:
+def is_super_admin(current_user: User = Depends(get_current_user)) -> User:
     """
-    Check if a user has super_admin role
+    Dependency to check if a user has super_admin role
     
     Super admins have unrestricted access to all organizations, users, and resources.
     This is the highest privilege level and should only be assigned to product owners
     or system administrators.
     
     Args:
-        user: The user to check
+        current_user: The authenticated user
         
     Returns:
-        True if user is a super_admin, False otherwise
+        The user object if they are a super_admin
+        
+    Raises:
+        HTTPException: If user is not a super_admin
     """
-    return user.role == "super_admin"
+    if current_user.role != "super_admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Super admin access required"
+        )
+    return current_user

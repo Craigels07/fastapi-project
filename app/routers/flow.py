@@ -14,6 +14,8 @@ from app.schemas.flow import (
     FlowResponse,
     FlowListResponse,
 )
+from app.service.flow_executor import execute_flow
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/flows", tags=["flows"])
 
@@ -320,3 +322,90 @@ async def delete_flow(
     
     flow_crud.delete_flow(db, flow_id)
     return None
+
+
+class FlowTestRequest(BaseModel):
+    """Request model for testing a flow"""
+    message: str
+    phone_number: str = "+1234567890"
+
+
+class FlowTestResponse(BaseModel):
+    """Response model for flow testing"""
+    success: bool
+    matched: bool
+    flow_code: str | None = None
+    flow_name: str | None = None
+    response_message: str | None = None
+    error: str | None = None
+    context: dict | None = None
+
+
+@router.post(
+    "/{flow_id}/test",
+    response_model=FlowTestResponse,
+    summary="Test a flow with a simulated message",
+)
+async def test_flow(
+    flow_id: UUID,
+    test_request: FlowTestRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Test a flow by simulating an inbound message.
+    This endpoint allows testing flows without sending actual WhatsApp messages.
+    """
+    db_flow = flow_crud.get_flow(db, flow_id)
+    
+    if not db_flow:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Flow not found",
+        )
+    
+    # Verify user has access to this flow's organization
+    if str(current_user.organization_id) != str(db_flow.organization_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied to this flow",
+        )
+    
+    try:
+        # Execute the flow with test context
+        response_message = execute_flow(
+            db_flow,
+            test_request.message,
+            test_request.phone_number
+        )
+        
+        if response_message:
+            return FlowTestResponse(
+                success=True,
+                matched=True,
+                flow_code=db_flow.code,
+                flow_name=db_flow.name,
+                response_message=response_message,
+                context={
+                    "user_input": test_request.message,
+                    "user_phone": test_request.phone_number,
+                    "message": test_request.message,
+                }
+            )
+        else:
+            return FlowTestResponse(
+                success=True,
+                matched=False,
+                flow_code=db_flow.code,
+                flow_name=db_flow.name,
+                error="Flow executed but returned no response"
+            )
+    
+    except Exception as e:
+        return FlowTestResponse(
+            success=False,
+            matched=False,
+            flow_code=db_flow.code,
+            flow_name=db_flow.name,
+            error=str(e)
+        )

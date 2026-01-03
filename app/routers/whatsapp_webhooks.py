@@ -16,6 +16,7 @@ from app.crud import flow as flow_crud
 from app.service.flow_executor import execute_flow
 from app.agent.whatsapp_agent import WhatsAppAgent
 from app.helpers.whatsapp_helper import model_with_tools
+from app.helpers.compliance_helper import enforce_opt_out, enforce_24h_window, can_send_freeform_message
 from twilio.rest import Client
 from twilio.request_validator import RequestValidator
 from cryptography.fernet import Fernet
@@ -132,10 +133,61 @@ async def whatsapp_inbound_webhook(request: Request, db: Session = Depends(get_d
             whatsapp_user = WhatsAppUser(
                 phone_number=from_number,
                 profile_name=profile_name,
-                organization_id=organization.id
+                organization_id=organization.id,
+                opted_out=False
             )
             db.add(whatsapp_user)
             db.flush()
+        
+        # CRITICAL: Enforce opt-out status FIRST (before any other processing)
+        try:
+            opt_out_result = enforce_opt_out(whatsapp_user, body, db)
+            
+            if opt_out_result["action"] == "opt_out":
+                logger.info(f"User {from_number} opted out")
+                # Send confirmation message via Messaging Service (REQUIRED for compliance)
+                client = Client(org_account_sid, org_auth_token)
+                messaging_service_sid = phone_number_record.messaging_service_sid if phone_number_record else None
+                
+                if messaging_service_sid:
+                    client.messages.create(
+                        messaging_service_sid=messaging_service_sid,
+                        to=f"whatsapp:{from_number}",
+                        body="You have been unsubscribed and will not receive further messages. Reply START to opt back in."
+                    )
+                else:
+                    # Fallback for legacy accounts without Messaging Service
+                    client.messages.create(
+                        body="You have been unsubscribed and will not receive further messages. Reply START to opt back in.",
+                        from_=f"whatsapp:{to_number}",
+                        to=f"whatsapp:{from_number}"
+                    )
+                return {"status": "received", "action": "opted_out"}
+            
+            if opt_out_result["action"] == "opt_in":
+                logger.info(f"User {from_number} opted back in")
+                # Send confirmation message via Messaging Service (REQUIRED for compliance)
+                client = Client(org_account_sid, org_auth_token)
+                messaging_service_sid = phone_number_record.messaging_service_sid if phone_number_record else None
+                
+                if messaging_service_sid:
+                    client.messages.create(
+                        messaging_service_sid=messaging_service_sid,
+                        to=f"whatsapp:{from_number}",
+                        body="You have been re-subscribed and will receive messages again."
+                    )
+                else:
+                    # Fallback for legacy accounts without Messaging Service
+                    client.messages.create(
+                        body="You have been re-subscribed and will receive messages again.",
+                        from_=f"whatsapp:{to_number}",
+                        to=f"whatsapp:{from_number}"
+                    )
+                return {"status": "received", "action": "opted_in"}
+        
+        except Exception as e:
+            logger.error(f"User {from_number} is opted out: {str(e)}")
+            return {"status": "blocked", "reason": "user_opted_out"}
         
         # Find or create active thread
         active_thread = db.query(WhatsAppThread).filter(
@@ -153,6 +205,10 @@ async def whatsapp_inbound_webhook(request: Request, db: Session = Depends(get_d
             )
             db.add(active_thread)
             db.flush()
+        
+        # CRITICAL: Update 24-hour window tracking (MANDATORY for compliance)
+        active_thread.last_user_message_at = datetime.utcnow()
+        logger.info(f"Updated 24-hour window for thread {active_thread.code}")
         
         # Create message record
         message = WhatsAppMessage(
@@ -184,18 +240,25 @@ async def whatsapp_inbound_webhook(request: Request, db: Session = Depends(get_d
         if matched_flow:
             logger.info(f"Matched flow: {matched_flow.code} - {matched_flow.name}")
             
-            # Execute the flow
-            flow_response = execute_flow(matched_flow, body, from_number)
+            # Execute the flow with WhatsApp sending enabled and compliance enforcement
+            from app.service.flow_executor import FlowExecutor
+            messaging_service_sid = phone_number_record.messaging_service_sid if phone_number_record else None
+            executor = FlowExecutor(
+                flow=matched_flow,
+                organization_phone=to_number,
+                db_session=db,
+                thread=active_thread,
+                user=whatsapp_user,
+                messaging_service_sid=messaging_service_sid
+            )
+            context = {
+                "user_input": body,
+                "user_phone": from_number,
+                "message": body,
+            }
+            flow_response = executor.execute(context, send_whatsapp=True)
             
             if flow_response:
-                # Send the flow response via Twilio
-                twilio_client = Client(account_sid, auth_token)
-                twilio_client.messages.create(
-                    body=flow_response,
-                    from_=f"whatsapp:{to_number}",
-                    to=f"whatsapp:{from_number}"
-                )
-                
                 # Store the outbound response message
                 response_message = WhatsAppMessage(
                     user_id=whatsapp_user.id,

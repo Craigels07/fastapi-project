@@ -56,3 +56,6 @@ twilio
 
 #openAI
 openai
+
+# ngrok for development
+pyngrok

@@ -45,9 +45,11 @@ class WhatsAppAccount(Base):
     # Twilio subaccount credentials
     twilio_subaccount_sid = Column(String, nullable=False, unique=True, index=True)
     twilio_auth_token = Column(String, nullable=False)  # Should be encrypted
+    messaging_service_sid = Column(String, nullable=True, index=True)  # REQUIRED: One per subaccount
     
     # WhatsApp Business Account (WABA) information
     waba_id = Column(String, nullable=True, index=True)
+    waba_verification_status = Column(String, nullable=True)  # VERIFIED, PENDING, FAILED
     meta_business_portfolio_id = Column(String, nullable=True)
     
     # Status tracking
