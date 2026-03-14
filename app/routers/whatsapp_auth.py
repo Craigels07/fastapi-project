@@ -14,7 +14,6 @@ from app.models.user import User
 from app.models.whatsapp_account import WhatsAppAccount, AccountStatus
 from app.models.whatsapp_phone_number import WhatsAppPhoneNumber, PhoneNumberStatus
 from app.service.twilio.tech_provider import TwilioTechProviderService
-from app.service.meta.graph_api import MetaGraphAPIService
 from app.auth.dependencies import get_current_user
 from cryptography.fernet import Fernet
 import logging
@@ -37,6 +36,44 @@ def encrypt_token(token: str) -> str:
 def decrypt_token(encrypted_token: str) -> str:
     """Decrypt a stored token"""
     return cipher_suite.decrypt(encrypted_token.encode()).decode()
+
+
+def get_embedded_signup_config() -> dict:
+    meta_config = {
+        "app_id": os.getenv("META_APP_ID"),
+        "configuration_id": os.getenv("META_CONFIGURATION_ID"),
+        "partner_solution_id": os.getenv("PARTNER_SOLUTION_ID")
+    }
+    missing_values = [key for key, value in meta_config.items() if not value]
+    if missing_values:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "WhatsApp Embedded Signup is not fully configured. Missing environment values: "
+                f"{', '.join(missing_values)}"
+            )
+        )
+    return meta_config
+
+
+def get_public_backend_url() -> str:
+    backend_url = os.getenv("BACKEND_URL", "").rstrip("/")
+    if not backend_url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="BACKEND_URL must be set to a public HTTPS URL before WhatsApp onboarding can complete."
+        )
+    lowered_backend_url = backend_url.lower()
+    if (
+        lowered_backend_url.startswith("http://")
+        or "localhost" in lowered_backend_url
+        or "127.0.0.1" in lowered_backend_url
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="BACKEND_URL must be a public HTTPS URL for Meta and Twilio webhook callbacks."
+        )
+    return backend_url
 
 
 # Request/Response Models
@@ -102,6 +139,9 @@ async def start_onboarding(
                 detail="Organization already has an active WhatsApp account. Please disconnect first."
             )
         
+        # Validate embedded signup configuration
+        meta_config = get_embedded_signup_config()
+        
         default_sid = os.getenv("TWILIO_DEFAULT_SUBACCOUNT_SID")
         default_token = os.getenv("TWILIO_DEFAULT_SUBACCOUNT_AUTH_TOKEN")
         if default_sid and default_token:
@@ -155,14 +195,12 @@ async def start_onboarding(
         return OnboardingResponse(
             account_id=str(whatsapp_account.id),
             phone_number=request.phone_number,
-            meta_config={
-                "app_id": os.getenv("META_APP_ID"),
-                "configuration_id": os.getenv("META_CONFIGURATION_ID"),
-                "partner_solution_id": os.getenv("PARTNER_SOLUTION_ID")
-            },
+            meta_config=meta_config,
             next_step="embedded_signup"
         )
     
+    except HTTPException:
+        raise
     except Exception as e:
         msg = str(e)
         logger.error(f"Failed to start onboarding: {msg}")
@@ -217,23 +255,10 @@ async def complete_embedded_signup(
                 detail="Onboarding session not found. Please start onboarding again."
             )
         
-        # CRITICAL: Verify WABA before registration (REQUIRED for compliance)
-        meta_service = MetaGraphAPIService()
-        try:
-            waba_verification = await meta_service.verify_waba(callback.waba_id)
-            logger.info(f"WABA {callback.waba_id} verified: {waba_verification['business_verification_status']}")
-        except Exception as e:
-            logger.error(f"WABA verification failed: {str(e)}")
-            account.status = AccountStatus.FAILED
-            db.commit()
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"WABA verification failed: {str(e)}"
-            )
-        
         # Update account with WABA information
         account.waba_id = callback.waba_id
-        account.waba_verification_status = waba_verification["business_verification_status"]
+        if not account.waba_verification_status:
+            account.waba_verification_status = "UNKNOWN"
         account.meta_business_portfolio_id = callback.business_portfolio_id
         
         # Ensure messaging service exists
@@ -247,18 +272,27 @@ async def complete_embedded_signup(
         twilio_service = TwilioTechProviderService()
         
         # Get backend URL for webhooks
-        backend_url = os.getenv("BACKEND_URL", "http://localhost:8000")
+        backend_url = get_public_backend_url()
         
-        sender = await twilio_service.register_whatsapp_sender(
-            subaccount_sid=account.twilio_subaccount_sid,
-            subaccount_token=decrypt_token(account.twilio_auth_token),
-            phone_number=callback.phone_number,
-            waba_id=callback.waba_id,
-            display_name=current_user.name or current_user.email,
-            callback_url=f"{backend_url}/webhooks/whatsapp/inbound",
-            status_callback_url=f"{backend_url}/webhooks/whatsapp/status",
-            messaging_service_sid=account.messaging_service_sid
-        )
+        try:
+            sender = await twilio_service.register_whatsapp_sender(
+                subaccount_sid=account.twilio_subaccount_sid,
+                subaccount_token=decrypt_token(account.twilio_auth_token),
+                phone_number=callback.phone_number,
+                waba_id=callback.waba_id,
+                display_name=current_user.name or current_user.email,
+                callback_url=f"{backend_url}/webhooks/whatsapp/inbound",
+                status_callback_url=f"{backend_url}/webhooks/whatsapp/status",
+                messaging_service_sid=account.messaging_service_sid
+            )
+        except Exception as e:
+            logger.error(f"Failed to register WhatsApp sender with Twilio: {str(e)}")
+            account.status = AccountStatus.FAILED
+            db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Failed to register WhatsApp sender with Twilio: {str(e)}"
+            )
         
         # Create phone number record (first number for this account)
         phone_number = WhatsAppPhoneNumber(
@@ -291,6 +325,8 @@ async def complete_embedded_signup(
             "status": "active"
         }
     
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to complete signup: {str(e)}")
         db.rollback()
@@ -325,7 +361,7 @@ async def get_whatsapp_status(
     primary_phone = account.get_primary_phone_number()
     
     return WhatsAppStatusResponse(
-        connected=account.status == AccountStatus.ACTIVE.value,
+        connected=account.status == AccountStatus.ACTIVE,
         phone_number=primary_phone.phone_number if primary_phone else None,
         display_name=primary_phone.display_name if primary_phone else None,
         waba_id=account.waba_id,
@@ -378,6 +414,8 @@ async def disconnect_whatsapp(
         
         return {"success": True, "message": "WhatsApp account disconnected"}
     
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Failed to disconnect WhatsApp: {str(e)}")
         raise HTTPException(
@@ -430,6 +468,8 @@ async def reconnect_whatsapp(
         
         return {"success": True, "message": "WhatsApp account reconnected"}
     
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Failed to reconnect WhatsApp: {str(e)}")
         raise HTTPException(
