@@ -143,7 +143,7 @@ async def get_record(
             primary_key_column = column
             break
     
-    if not primary_key_column:
+    if primary_key_column is None:
         raise HTTPException(status_code=400, detail="Model has no primary key")
     
     record = db.query(model_class).filter(
@@ -176,7 +176,7 @@ async def update_record(
             primary_key_column = column
             break
     
-    if not primary_key_column:
+    if primary_key_column is None:
         raise HTTPException(status_code=400, detail="Model has no primary key")
     
     record = db.query(model_class).filter(
@@ -229,7 +229,7 @@ async def delete_record(
             primary_key_column = column
             break
     
-    if not primary_key_column:
+    if primary_key_column is None:
         raise HTTPException(status_code=400, detail="Model has no primary key")
     
     record = db.query(model_class).filter(
