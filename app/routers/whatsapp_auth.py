@@ -42,9 +42,12 @@ def get_embedded_signup_config() -> dict:
     meta_config = {
         "app_id": os.getenv("META_APP_ID"),
         "configuration_id": os.getenv("META_CONFIGURATION_ID"),
-        "partner_solution_id": os.getenv("PARTNER_SOLUTION_ID")
+        "partner_solution_id": os.getenv("PARTNER_SOLUTION_ID", "")
     }
-    missing_values = [key for key, value in meta_config.items() if not value]
+    # Only require META_APP_ID and META_CONFIGURATION_ID for embedded signup
+    # PARTNER_SOLUTION_ID is optional (used for Twilio partner tracking)
+    required_fields = ["app_id", "configuration_id"]
+    missing_values = [key for key in required_fields if not meta_config.get(key)]
     if missing_values:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
